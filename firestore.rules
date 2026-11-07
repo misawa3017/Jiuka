@@ -1,0 +1,216 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function googleUser() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == 'google.com';
+    }
+
+    function ownAccount(uid) {
+      return googleUser() && request.auth.uid == uid;
+    }
+
+    function trimmedNonEmpty(value) {
+      return value is string
+        && value == value.trim()
+        && value.size() > 0;
+    }
+
+    function trimmedString(value) {
+      return value is string && value == value.trim();
+    }
+
+    function validRecurringEventSettings(settings) {
+      return settings == null || (
+        settings is map
+        && settings.keys().hasAll(['dayOfWeek', 'hour', 'minute'])
+        && settings.keys().hasOnly(['dayOfWeek', 'hour', 'minute'])
+        && settings.dayOfWeek is int
+        && settings.dayOfWeek >= 1
+        && settings.dayOfWeek <= 7
+        && settings.hour is int
+        && settings.hour >= 0
+        && settings.hour <= 23
+        && settings.minute is int
+        && settings.minute >= 0
+        && settings.minute <= 59
+      );
+    }
+
+    match /users/{uid} {
+      allow get: if ownAccount(uid);
+      allow list: if false;
+      allow create: if ownAccount(uid)
+        && request.resource.data.keys().hasAll(['name', 'email', 'avatarUrl', 'joinedGroups'])
+        && request.resource.data.keys().hasOnly(['name', 'email', 'avatarUrl', 'joinedGroups'])
+        && trimmedNonEmpty(request.resource.data.name)
+        && request.resource.data.email == request.auth.token.email
+        && (request.resource.data.avatarUrl == null || request.resource.data.avatarUrl is string)
+        && request.resource.data.joinedGroups == [];
+      allow update: if ownAccount(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
+        && trimmedNonEmpty(request.resource.data.name);
+      allow delete: if false;
+    }
+
+    match /groups/{groupId} {
+      allow get, list: if googleUser();
+      allow create: if googleUser()
+        && request.resource.data.keys().hasAll(['name', 'description', 'adminId', 'maxPlayersDefault', 'recurringEventSettings', 'memberIds'])
+        && request.resource.data.keys().hasOnly(['name', 'description', 'adminId', 'maxPlayersDefault', 'recurringEventSettings', 'memberIds'])
+        && request.resource.data.adminId == request.auth.uid
+        && request.resource.data.memberIds == [request.auth.uid]
+        && trimmedNonEmpty(request.resource.data.name)
+        // Flutter limits grapheme clusters; the broader rules cap accommodates multi-scalar characters.
+        && request.resource.data.name.size() <= 960
+        && trimmedString(request.resource.data.description)
+        && request.resource.data.description.size() <= 8000
+        && validRecurringEventSettings(request.resource.data.recurringEventSettings)
+        && request.resource.data.maxPlayersDefault is int
+        && request.resource.data.maxPlayersDefault >= 2;
+      allow update: if googleUser()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
+        && !(request.auth.uid in resource.data.memberIds)
+        && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid]);
+      allow delete: if false;
+    }
+
+    match /events/{eventId} {
+      // The event document is public to support anonymous browsing and shared links.
+      allow get, list: if true;
+      allow create: if googleUser()
+        && request.resource.data.keys().hasAll([
+          'groupId', 'organizerId', 'sport', 'district', 'description',
+          'existingPlayers', 'startTime', 'endTime', 'venue', 'cost',
+          'costMode', 'organizerPlaying', 'maxPlayers', 'attendeeCount',
+          'waitlistCount', 'status', 'isRecurring'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'groupId', 'organizerId', 'sport', 'district', 'description',
+          'existingPlayers', 'startTime', 'endTime', 'venue', 'cost',
+          'costMode', 'organizerPlaying', 'maxPlayers', 'attendeeCount',
+          'waitlistCount', 'status', 'isRecurring'
+        ])
+        && request.resource.data.organizerId == request.auth.uid
+        && request.resource.data.groupId is string
+        && (request.resource.data.groupId == '' || (
+          exists(/databases/$(database)/documents/groups/$(request.resource.data.groupId))
+          && get(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.adminId == request.auth.uid
+        ))
+        && request.resource.data.sport in ['basketball', 'badminton']
+        && trimmedNonEmpty(request.resource.data.district)
+        && trimmedString(request.resource.data.description)
+        && trimmedNonEmpty(request.resource.data.venue)
+        && request.resource.data.startTime is timestamp
+        && request.resource.data.startTime > request.time
+        && request.resource.data.endTime is timestamp
+        && request.resource.data.endTime > request.resource.data.startTime
+        && request.resource.data.cost is int
+        && request.resource.data.cost >= 0
+        && request.resource.data.costMode in ['perPerson', 'totalVenue']
+        && request.resource.data.organizerPlaying is bool
+        && request.resource.data.existingPlayers is int
+        && request.resource.data.existingPlayers >= (request.resource.data.organizerPlaying ? 1 : 0)
+        && request.resource.data.maxPlayers is int
+        && request.resource.data.maxPlayers >= 2
+        && request.resource.data.existingPlayers <= request.resource.data.maxPlayers
+        && request.resource.data.attendeeCount == 0
+        && request.resource.data.waitlistCount == 0
+        && request.resource.data.status == 0
+        && request.resource.data.isRecurring == false;
+      allow update: if googleUser()
+        && eventOpen()
+        && notOrganizerPlaying()
+        && !exists(participantPath(request.auth.uid))
+        && (
+          joinAttendee() || joinWaitlisted()
+        );
+      allow delete: if false;
+      match /participants/{participantId} {
+        allow get: if googleUser()
+          && (request.auth.uid == participantId || eventOrganizer(eventId));
+        allow list: if googleUser() && eventOrganizer(eventId);
+        allow create: if googleUser()
+          && request.auth.uid == participantId
+          && request.resource.data.keys().hasAll(['eventId', 'userId', 'status', 'joinedAt'])
+          && request.resource.data.keys().hasOnly(['eventId', 'userId', 'status', 'joinedAt'])
+          && request.resource.data.eventId == eventId
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.joinedAt == request.time
+          && (
+            request.resource.data.status == 'attending'
+              && eventHasJoined(request.auth.uid, 'attending')
+            || request.resource.data.status == 'waitlisted'
+              && eventHasJoined(request.auth.uid, 'waitlisted')
+          );
+        allow update, delete: if false;
+      }
+
+      function eventPath() {
+        return /databases/$(database)/documents/events/$(eventId);
+      }
+
+      function participantPath(uid) {
+        return /databases/$(database)/documents/events/$(eventId)/participants/$(uid);
+      }
+
+      function eventOrganizer(uid) {
+        return get(eventPath()).data.organizerId == uid;
+      }
+
+      function eventOpen() {
+        return resource.data.status == 0
+          && resource.data.startTime is timestamp
+          && resource.data.endTime is timestamp
+          && resource.data.startTime > request.time
+          && resource.data.endTime > resource.data.startTime;
+      }
+
+      function notOrganizerPlaying() {
+        return !(resource.data.organizerPlaying && resource.data.organizerId == request.auth.uid);
+      }
+
+      function onlyCounter(fields) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+      }
+
+      function eventHasJoined(uid, status) {
+        let event = get(eventPath()).data;
+        let after = getAfter(eventPath()).data;
+        return event.status == 0
+          && event.startTime is timestamp
+          && event.endTime is timestamp
+          && event.startTime > request.time
+          && event.endTime > event.startTime
+          && !(event.organizerPlaying && event.organizerId == uid)
+          && !exists(participantPath(uid))
+          && (
+            status == 'attending'
+              && event.existingPlayers + event.attendeeCount < event.maxPlayers
+              && after.attendeeCount == event.attendeeCount + 1
+              && after.waitlistCount == event.waitlistCount
+            || status == 'waitlisted'
+              && event.existingPlayers + event.attendeeCount >= event.maxPlayers
+              && after.attendeeCount == event.attendeeCount
+              && after.waitlistCount == event.waitlistCount + 1
+          );
+      }
+
+      function joinAttendee() {
+        return onlyCounter(['attendeeCount'])
+          && request.resource.data.attendeeCount == resource.data.attendeeCount + 1
+          && getAfter(participantPath(request.auth.uid)).data.status == 'attending';
+      }
+
+      function joinWaitlisted() {
+        return onlyCounter(['waitlistCount'])
+          && request.resource.data.waitlistCount == resource.data.waitlistCount + 1
+          && getAfter(participantPath(request.auth.uid)).data.status == 'waitlisted';
+      }
+    }
+
+    match /{path=**}/participants/{participantId} {
+      allow list: if googleUser() && resource.data.userId == request.auth.uid;
+    }
+  }
+}
