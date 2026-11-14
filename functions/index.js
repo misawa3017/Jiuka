@@ -5,9 +5,16 @@ const {
   Timestamp,
   getFirestore,
 } = require('firebase-admin/firestore');
-const { setGlobalOptions } = require('firebase-functions/v2');
+const { getMessaging } = require('firebase-admin/messaging');
+const { setGlobalOptions, logger } = require('firebase-functions/v2');
+const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { HttpsError, onCall } = require('firebase-functions/v2/https');
 const { planEventUpdate, EventUpdateError } = require('./event_update');
+const {
+  participantChangeNotice,
+  eventChangeNotice,
+  removedNotice,
+} = require('./notifications');
 
 initializeApp();
 setGlobalOptions({ region: 'asia-east1', maxInstances: 10 });
@@ -34,6 +41,63 @@ function requireId(value, message) {
 
 /** 系統管理者名單存在 admins/{uid}，只能由 Firebase Console 或 Admin SDK 寫入。 */
 const adminRef = (uid) => db.collection('admins').doc(uid);
+
+/**
+ * 發通知：寫入站內通知 users/{uid}/notifications，並推播到該使用者已開啟推播的瀏覽器。
+ * 推播失敗不影響站內通知；失效的推播 token 會被清除。
+ */
+async function notify(userIds, notice, eventId) {
+  const recipients = [...new Set(userIds)].filter(Boolean);
+  if (recipients.length === 0) return;
+  const { type, title, body } = notice;
+
+  for (let start = 0; start < recipients.length; start += 400) {
+    const batch = db.batch();
+    for (const uid of recipients.slice(start, start + 400)) {
+      batch.set(db.collection('users').doc(uid).collection('notifications').doc(), {
+        type,
+        title,
+        body,
+        eventId,
+        read: false,
+        createdAt: FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+
+  const tokenDocs = (
+    await Promise.all(
+      recipients.map((uid) => db.collection('users').doc(uid).collection('fcmTokens').get()),
+    )
+  ).flatMap((snapshot) => snapshot.docs);
+  if (tokenDocs.length === 0) return;
+
+  const project = process.env.GCLOUD_PROJECT;
+  const link = project ? `https://${project}.web.app/event/${eventId}` : undefined;
+  for (let start = 0; start < tokenDocs.length; start += 500) {
+    const docs = tokenDocs.slice(start, start + 500);
+    try {
+      const response = await getMessaging().sendEachForMulticast({
+        tokens: docs.map((doc) => doc.id),
+        notification: { title, body },
+        webpush: link ? { fcmOptions: { link } } : undefined,
+      });
+      await Promise.all(
+        response.responses.map((result, index) => {
+          const code = result.error?.code;
+          if (code === 'messaging/registration-token-not-registered'
+            || code === 'messaging/invalid-registration-token') {
+            return docs[index].ref.delete();
+          }
+          return null;
+        }),
+      );
+    } catch (error) {
+      logger.warn('推播失敗', error);
+    }
+  }
+}
 
 /** 場次仍開放且尚未開始。 */
 function requireOpen(event, message) {
@@ -218,5 +282,31 @@ exports.removeParticipant = onCall(async (request) => {
   if (!result.left) {
     throw new HttpsError('not-found', '這位球友不在名單中。');
   }
+  const event = (await db.collection('events').doc(eventId).get()).data();
+  await notify([userId], removedNotice(event), eventId);
   return result;
+});
+
+// 候補轉正取（退出、移除、名額增加都會觸發）時通知本人。
+exports.onParticipantUpdated = onDocumentUpdated(
+  'events/{eventId}/participants/{userId}',
+  async (change) => {
+    const before = change.data?.before.data();
+    const after = change.data?.after.data();
+    const { eventId, userId } = change.params;
+    const event = (await db.collection('events').doc(eventId).get()).data();
+    const notice = participantChangeNotice(before, after, event);
+    if (notice) await notify([userId], notice, eventId);
+  },
+);
+
+// 場次被取消、主揪更新資訊、主揪確定費用時通知報名者。
+exports.onEventUpdated = onDocumentUpdated('events/{eventId}', async (change) => {
+  const notice = eventChangeNotice(change.data?.before.data(), change.data?.after.data());
+  if (!notice) return;
+  const { eventId } = change.params;
+  let participants = db.collection('events').doc(eventId).collection('participants');
+  if (notice.attendingOnly) participants = participants.where('status', '==', 'attending');
+  const snapshot = await participants.get();
+  await notify(snapshot.docs.map((doc) => doc.id), notice, eventId);
 });

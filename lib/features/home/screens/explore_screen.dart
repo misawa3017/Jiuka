@@ -8,6 +8,8 @@ import '../../auth/repositories/auth_repository.dart';
 import '../../events/models/event_model.dart';
 import '../../events/repositories/event_repository.dart';
 import '../../events/widgets/event_card.dart';
+import '../../notifications/notifications_screen.dart';
+import '../../notifications/push_service.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -49,6 +51,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
   }
 
   Future<void> _logout(AuthRepository auth) async {
+    // 先取消這台裝置的推播，避免登出後還收到前一個帳號的通知。
+    final userId = auth.currentUser?.id;
+    if (userId != null) await context.read<PushService>().disable(userId);
     await auth.logout();
     if (mounted && auth.errorMessage != null) {
       ScaffoldMessenger.of(
@@ -73,6 +78,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ),
         actions: [
           if (auth.isAuthenticated) ...[
+            NotificationBell(userId: auth.currentUser!.id),
             IconButton(
               tooltip: '我的場次',
               onPressed: () => context.push('/my-events'),

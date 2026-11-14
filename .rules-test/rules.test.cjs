@@ -72,6 +72,30 @@ async function main() {
     }));
     await assertFails(updateDoc(doc(alice, 'users', 'alice'), { email: 'new@example.com' }));
     await assertSucceeds(updateDoc(doc(alice, 'users', 'alice'), { name: '自訂暱稱' }));
+    // 站內通知：只有本人能讀、只能標成已讀；前端不能建立或刪除。
+    const notice = (store) => doc(store, 'users', 'alice', 'notifications', 'n1');
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(notice(context.firestore()), {
+        type: 'promoted', title: 't', body: 'b', eventId: 'game', read: false, createdAt: Timestamp.now(),
+      });
+    });
+    await assertSucceeds(getDocs(collection(alice, 'users', 'alice', 'notifications')));
+    await assertFails(getDoc(notice(guest)));
+    await assertFails(getDocs(collection(bob, 'users', 'alice', 'notifications')));
+    await assertFails(updateDoc(notice(alice), { title: '改內容' }));
+    await assertFails(updateDoc(notice(alice), { read: false, title: 'x' }));
+    await assertFails(updateDoc(notice(bob), { read: true }));
+    await assertSucceeds(updateDoc(notice(alice), { read: true }));
+    await assertFails(setDoc(doc(alice, 'users', 'alice', 'notifications', 'n2'), { title: '偽造' }));
+    await assertFails(deleteDoc(notice(alice)));
+    // 推播 token：本人可新增與刪除，別人不行。
+    const token = (store, uid) => doc(store, 'users', uid, 'fcmTokens', 'token-abc');
+    await assertSucceeds(setDoc(token(alice, 'alice'), { createdAt: serverTimestamp() }));
+    await assertFails(setDoc(token(bob, 'alice'), { createdAt: serverTimestamp() }));
+    await assertFails(setDoc(token(alice, 'alice'), { createdAt: serverTimestamp(), extra: 1 }));
+    await assertFails(getDocs(collection(alice, 'users', 'alice', 'fcmTokens')));
+    await assertFails(deleteDoc(token(bob, 'alice')));
+    await assertSucceeds(deleteDoc(token(alice, 'alice')));
     for (const [uid, store, name] of [['bob', bob, 'Bob'], ['carol', carol, 'Carol']]) {
       await assertSucceeds(setDoc(doc(store, 'users', uid), {
         name, email: `${uid}@example.com`, avatarUrl: null, joinedGroups: [],

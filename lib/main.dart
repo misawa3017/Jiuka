@@ -10,6 +10,8 @@ import 'core/firebase_config.dart';
 import 'features/auth/repositories/auth_repository.dart';
 import 'features/groups/repositories/group_repository.dart';
 import 'features/events/repositories/event_repository.dart';
+import 'features/notifications/notification_repository.dart';
+import 'features/notifications/push_service.dart';
 import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 
@@ -34,6 +36,8 @@ Future<void> main() async {
         ChangeNotifierProvider(create: (_) => AuthRepository()),
         ChangeNotifierProvider(create: (_) => GroupRepository()),
         ChangeNotifierProvider(create: (_) => EventRepository()),
+        Provider(create: (_) => NotificationRepository()),
+        Provider(create: (_) => PushService()),
       ],
       child: const JiukaApp(),
     ),

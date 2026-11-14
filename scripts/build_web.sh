@@ -3,6 +3,8 @@
 # 每次都從 Firebase CLI 重新取得設定值，缺任何一項就停止，避免 build 出無法啟動的網站。
 #
 # 用法：scripts/build_web.sh [專案 ID]   （預設讀 .firebaserc 的 default）
+# 瀏覽器推播（選用）：先 export FIREBASE_VAPID_KEY=<Firebase Console → 專案設定 →
+# Cloud Messaging → 網路推播憑證的金鑰組>；沒有設定時推播停用，站內通知照常運作。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -35,10 +37,29 @@ flutter build web \
   --dart-define=FIREBASE_APP_ID="$APP_ID" \
   --dart-define=FIREBASE_PROJECT_ID="$PROJECT_ID" \
   --dart-define=FIREBASE_MESSAGING_SENDER_ID="$SENDER_ID" \
-  --dart-define=FIREBASE_AUTH_DOMAIN="$AUTH_DOMAIN"
+  --dart-define=FIREBASE_AUTH_DOMAIN="$AUTH_DOMAIN" \
+  --dart-define=FIREBASE_VAPID_KEY="${FIREBASE_VAPID_KEY:-}"
+
+# 瀏覽器推播需要的 service worker（網站在背景時由它顯示通知），設定值與 App 相同。
+cat > build/web/firebase-messaging-sw.js <<SW
+importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js');
+importScripts('https://www.gstatic.com/firebasejs/10.14.1/firebase-messaging-compat.js');
+firebase.initializeApp({
+  apiKey: '$API_KEY',
+  appId: '$APP_ID',
+  projectId: '$PROJECT_ID',
+  messagingSenderId: '$SENDER_ID',
+  authDomain: '$AUTH_DOMAIN',
+});
+// 帶 notification 欄位的訊息由 SDK 自動顯示；點擊時開啟 fcmOptions.link 指定的場次。
+firebase.messaging();
+SW
 
 if ! grep -q "$PROJECT_ID" build/web/main.dart.js; then
   echo "錯誤：build 結果沒有包含專案設定。" >&2
   exit 1
+fi
+if [[ -z "${FIREBASE_VAPID_KEY:-}" ]]; then
+  echo "提醒：未設定 FIREBASE_VAPID_KEY，這次 build 不含瀏覽器推播（站內通知仍正常）。"
 fi
 echo "完成：build/web 已包含 $PROJECT_ID 的設定。"

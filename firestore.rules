@@ -63,6 +63,25 @@ service cloud.firestore {
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name'])
         && trimmedNonEmpty(request.resource.data.name);
       allow delete: if false;
+
+      // 站內通知：只由 Cloud Functions 建立；本人可讀，並只能把 read 改成 true。
+      match /notifications/{notificationId} {
+        allow get, list: if ownAccount(uid);
+        allow update: if ownAccount(uid)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read'])
+          && request.resource.data.read == true;
+        allow create, delete: if false;
+      }
+
+      // 瀏覽器推播 token：文件 ID 就是 token；本人可新增與刪除（例如登出時）。
+      match /fcmTokens/{token} {
+        allow get: if ownAccount(uid);
+        allow create: if ownAccount(uid)
+          && request.resource.data.keys().hasOnly(['createdAt'])
+          && request.resource.data.createdAt == request.time;
+        allow delete: if ownAccount(uid);
+        allow list, update: if false;
+      }
     }
 
     match /groups/{groupId} {

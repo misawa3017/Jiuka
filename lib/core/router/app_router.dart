@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../features/admin/screens/admin_screen.dart';
 import '../../features/auth/repositories/auth_repository.dart';
 import '../../features/home/screens/home_screen.dart';
+import '../../features/notifications/notifications_screen.dart';
 import '../../features/home/screens/explore_screen.dart';
 import '../../features/auth/screens/login_screen.dart';
 import '../../features/groups/screens/create_group_screen.dart';
@@ -67,6 +68,11 @@ GoRouter createAppRouter(AuthRepository auth) => GoRouter(
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) =>
           EditEventScreen(eventId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/notifications',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const NotificationsScreen(),
     ),
     GoRoute(
       path: '/admin',
