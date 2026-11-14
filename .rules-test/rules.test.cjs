@@ -62,6 +62,11 @@ async function main() {
     }));
     await assertFails(updateDoc(doc(alice, 'users', 'alice'), { email: 'new@example.com' }));
     await assertSucceeds(updateDoc(doc(alice, 'users', 'alice'), { name: '自訂暱稱' }));
+    for (const [uid, store, name] of [['bob', bob, 'Bob'], ['carol', carol, 'Carol']]) {
+      await assertSucceeds(setDoc(doc(store, 'users', uid), {
+        name, email: `${uid}@example.com`, avatarUrl: null, joinedGroups: [],
+      }));
+    }
 
     await assertFails(setDoc(game(guest), event()));
     await assertFails(setDoc(game(bob), event()));
@@ -72,16 +77,19 @@ async function main() {
     await assertFails(updateDoc(game(guest), { attendeeCount: 1 }));
     await assertFails(updateDoc(game(password), { attendeeCount: 1 }));
     await assertFails(updateDoc(game(bob), { cost: 1 }));
-    const join = async (store, uid, status, counter) => {
+    const join = async (store, uid, status, counter, extra = { displayName: uid === 'bob' ? 'Bob' : 'Carol' }) => {
       const batch = writeBatch(store);
       batch.update(game(store), { [counter]: 1 });
       batch.set(doc(store, 'events', 'game', 'participants', uid), {
         eventId: 'game', userId: uid, status,
-        joinedAt: serverTimestamp(),
+        joinedAt: serverTimestamp(), ...extra,
       });
       await batch.commit();
     };
     await assertFails(updateDoc(game(bob), { attendeeCount: 1 }));
+    // 報名時必須帶上自己的暱稱，不能省略或冒用別人的名字。
+    await assertFails(join(bob, 'bob', 'attending', 'attendeeCount', {}));
+    await assertFails(join(bob, 'bob', 'attending', 'attendeeCount', { displayName: 'Alice' }));
     await assertSucceeds(join(bob, 'bob', 'attending', 'attendeeCount'));
     await assertSucceeds(join(carol, 'carol', 'waitlisted', 'waitlistCount'));
     await assertFails(getDoc(doc(guest, 'events', 'game', 'participants', 'bob')));
@@ -102,6 +110,18 @@ async function main() {
     await assertFails(getDocs(roster(guest)));
     await assertFails(getDocs(roster(password)));
     await assertFails(getDoc(rosterEntry(bob, 'carol')));
+    assert.equal((await getDoc(rosterEntry(alice, 'bob'))).data().displayName, 'Bob');
+
+    // 改暱稱：本人可在同一批寫入同步名單上的暱稱；不能改成別的名字，也不能改別人的。
+    const rename = writeBatch(bob);
+    rename.update(doc(bob, 'users', 'bob'), { name: 'Bobby' });
+    rename.update(rosterEntry(bob, 'bob'), { displayName: 'Bobby' });
+    await assertSucceeds(rename.commit());
+    assert.equal((await getDoc(rosterEntry(alice, 'bob'))).data().displayName, 'Bobby');
+    await assertFails(updateDoc(rosterEntry(bob, 'bob'), { displayName: '假名字' }));
+    await assertFails(updateDoc(rosterEntry(bob, 'bob'), { displayName: 'Bobby', status: 'waitlisted' }));
+    await assertFails(updateDoc(rosterEntry(alice, 'bob'), { displayName: 'Bobby' }));
+    await assertFails(updateDoc(rosterEntry(carol, 'bob'), { displayName: 'Carol' }));
     assert.equal((await getDoc(game(guest))).data().attendeeCount, 1);
     assert.equal((await getDoc(game(guest))).data().waitlistCount, 1);
     await assertFails(deleteDoc(doc(alice, 'events', 'game', 'participants', 'bob')));
@@ -128,6 +148,7 @@ async function main() {
     lateJoin.update(game(dave), { waitlistCount: 2 });
     lateJoin.set(doc(dave, 'events', 'game', 'participants', 'dave'), {
       eventId: 'game', userId: 'dave', status: 'waitlisted', joinedAt: serverTimestamp(),
+      displayName: 'Dave',
     });
     await assertFails(lateJoin.commit());
 

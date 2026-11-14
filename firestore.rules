@@ -134,18 +134,29 @@ service cloud.firestore {
         allow list: if googleUser() && eventOrganizer(request.auth.uid);
         allow create: if googleUser()
           && request.auth.uid == participantId
-          && request.resource.data.keys().hasAll(['eventId', 'userId', 'status', 'joinedAt'])
-          && request.resource.data.keys().hasOnly(['eventId', 'userId', 'status', 'joinedAt'])
+          && request.resource.data.keys().hasAll(['eventId', 'userId', 'status', 'joinedAt', 'displayName'])
+          && request.resource.data.keys().hasOnly(['eventId', 'userId', 'status', 'joinedAt', 'displayName'])
           && request.resource.data.eventId == eventId
           && request.resource.data.userId == request.auth.uid
           && request.resource.data.joinedAt == request.time
+          && request.resource.data.displayName == ownName()
           && (
             request.resource.data.status == 'attending'
               && eventHasJoined(request.auth.uid, 'attending')
             || request.resource.data.status == 'waitlisted'
               && eventHasJoined(request.auth.uid, 'waitlisted')
           );
-        allow update, delete: if false;
+        // 本人改暱稱時同步名單上的暱稱；只能改 displayName，且必須等於（同批寫入後的）自己的暱稱。
+        allow update: if googleUser()
+          && request.auth.uid == participantId
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName'])
+          && request.resource.data.displayName == ownName();
+        allow delete: if false;
+      }
+
+      // 報名者自己的暱稱；用 getAfter 讓「改暱稱＋同步名單」可以在同一批寫入完成。
+      function ownName() {
+        return getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.name;
       }
 
       function eventPath() {

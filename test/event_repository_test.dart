@@ -17,6 +17,7 @@ void main() {
   late EventRepository repository;
   late Map<String, dynamic> eventData;
   var participantExists = false;
+  Map<String, dynamic>? participantData;
 
   setUp(() {
     store = MockStore();
@@ -68,6 +69,9 @@ void main() {
       () => transaction.set<Map<String, dynamic>>(participantRef, any()),
     ).thenAnswer((invocation) {
       participantExists = true;
+      participantData = Map<String, dynamic>.from(
+        invocation.positionalArguments[1] as Map,
+      );
       return transaction;
     });
     when(() => store.runTransaction<void>(any())).thenAnswer((invocation) {
@@ -83,9 +87,11 @@ void main() {
   test(
     'join records a private participant and updates only the count',
     () async {
-      await repository.joinEvent('game', 'first');
+      await repository.joinEvent('game', 'first', '小明');
       expect(eventData['attendeeCount'], 1);
       expect(eventData.containsKey('attendeeIds'), isFalse);
+      expect(participantData!['displayName'], '小明');
+      expect(participantData!['status'], 'attending');
       verify(
         () => transaction.set<Map<String, dynamic>>(participantRef, any()),
       ).called(1);
@@ -94,7 +100,7 @@ void main() {
 
   test('join is idempotent for an existing participant', () async {
     participantExists = true;
-    await repository.joinEvent('game', 'first');
+    await repository.joinEvent('game', 'first', '小明');
     expect(eventData['attendeeCount'], 0);
     verifyNever(() => transaction.update(eventRef, any()));
   });

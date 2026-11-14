@@ -215,7 +215,12 @@ class EventRepository extends ChangeNotifier {
     return events;
   }
 
-  Future<void> joinEvent(String eventId, String userId) async {
+  /// [displayName] 必須是使用者目前的暱稱，Firestore 規則會比對。
+  Future<void> joinEvent(
+    String eventId,
+    String userId,
+    String displayName,
+  ) async {
     final eventRef = _firestore.collection('events').doc(eventId);
     final participantRef = eventRef.collection('participants').doc(userId);
     await _firestore.runTransaction<void>((transaction) async {
@@ -241,6 +246,7 @@ class EventRepository extends ChangeNotifier {
         'userId': userId,
         'status': isWaitlisted ? 'waitlisted' : 'attending',
         'joinedAt': FieldValue.serverTimestamp(),
+        'displayName': displayName,
       });
     });
   }

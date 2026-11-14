@@ -269,7 +269,8 @@ class _EventDetails extends StatelessWidget {
               FilledButton(
                 onPressed: () async {
                   try {
-                    await repository.joinEvent(event.id, userId!);
+                    final user = context.read<AuthRepository>().currentUser!;
+                    await repository.joinEvent(event.id, user.id, user.name);
                   } catch (_) {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -428,7 +429,11 @@ class _Roster extends StatelessWidget {
         for (var index = 0; index < users.length; index++)
           ListTile(
             leading: CircleAvatar(child: Text('${index + 1}')),
-            title: Text('球友 ${index + 1}'),
+            title: Text(
+              users[index].displayName.isEmpty
+                  ? '球友 ${index + 1}'
+                  : users[index].displayName,
+            ),
           ),
       ],
     );

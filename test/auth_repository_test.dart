@@ -1,8 +1,22 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:mocktail/mocktail.dart';
 import 'package:jiuka/core/router/app_router.dart';
+import 'package:jiuka/features/auth/models/user_model.dart';
 import 'support/auth_fixture.dart';
+
+// ignore: subtype_of_sealed_class
+class MockQuery extends Mock implements Query<Map<String, dynamic>> {}
+
+class MockQuerySnapshot extends Mock
+    implements QuerySnapshot<Map<String, dynamic>> {}
+
+// ignore: subtype_of_sealed_class
+class MockEntry extends Mock
+    implements QueryDocumentSnapshot<Map<String, dynamic>> {}
+
+class MockBatch extends Mock implements WriteBatch {}
 
 void main() {
   late AuthFixture fixture;
@@ -111,5 +125,74 @@ void main() {
     ]) {
       expect(safeReturnLocation(value), '/');
     }
+  });
+
+  test('改暱稱時同一批寫入同步報名資料，已同步的不重寫', () async {
+    registerFallbackValue(MockDocument());
+    await fixture.repository.signInWithGoogle();
+    final query = MockQuery();
+    final batch = MockBatch();
+    MockEntry entry(String name) {
+      final doc = MockEntry();
+      when(() => doc.data()).thenReturn({'displayName': name});
+      when(() => doc.reference).thenReturn(MockDocument());
+      return doc;
+    }
+
+    final stale = entry('Google Name');
+    final synced = entry('新暱稱');
+    final legacy = MockEntry();
+    when(() => legacy.data()).thenReturn({});
+    when(() => legacy.reference).thenReturn(MockDocument());
+    QuerySnapshot<Map<String, dynamic>> result(List<MockEntry> docs) {
+      final snapshot = MockQuerySnapshot();
+      when(() => snapshot.docs).thenReturn(docs);
+      return snapshot;
+    }
+
+    when(() => fixture.store.collectionGroup('participants')).thenReturn(query);
+    when(
+      () => query.where(any(), isEqualTo: any(named: 'isEqualTo')),
+    ).thenReturn(query);
+    final statuses = <Object?>[];
+    when(
+      () => query.where('status', isEqualTo: any(named: 'isEqualTo')),
+    ).thenAnswer((invocation) {
+      statuses.add(invocation.namedArguments[#isEqualTo]);
+      return query;
+    });
+    when(() => query.orderBy('joinedAt')).thenReturn(query);
+    var call = 0;
+    when(() => query.get()).thenAnswer(
+      (_) async => call++ == 0 ? result([stale, synced]) : result([legacy]),
+    );
+    when(() => fixture.store.batch()).thenReturn(batch);
+    final updates = <DocumentReference, Map<String, dynamic>>{};
+    when(() => batch.update<Map<String, dynamic>>(any(), any())).thenAnswer((
+      invocation,
+    ) {
+      updates[invocation.positionalArguments[0] as DocumentReference] =
+          Map<String, dynamic>.from(invocation.positionalArguments[1] as Map);
+    });
+    when(() => batch.commit()).thenAnswer((_) async {});
+
+    final user = fixture.repository.currentUser!;
+    await fixture.repository.updateUser(
+      User(
+        id: user.id,
+        name: '新暱稱',
+        email: user.email,
+        avatarUrl: user.avatarUrl,
+        joinedGroups: user.joinedGroups,
+      ),
+    );
+
+    expect(statuses, ['attending', 'waitlisted']);
+    expect(updates[fixture.document], {'name': '新暱稱'});
+    expect(updates[stale.reference], {'displayName': '新暱稱'});
+    expect(updates[legacy.reference], {'displayName': '新暱稱'});
+    expect(updates.containsKey(synced.reference), isFalse);
+    verify(() => batch.commit()).called(1);
+    expect(fixture.repository.currentUser!.name, '新暱稱');
   });
 }

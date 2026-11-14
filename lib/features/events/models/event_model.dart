@@ -35,10 +35,14 @@ class EventParticipant {
   final EventParticipationStatus status;
   final DateTime joinedAt;
 
+  /// 報名時的暱稱；改暱稱時會同步。舊資料沒有這個欄位時為空字串。
+  final String displayName;
+
   const EventParticipant({
     required this.userId,
     required this.status,
     required this.joinedAt,
+    this.displayName = '',
   });
 
   factory EventParticipant.fromMap(Map<String, dynamic> map, String userId) =>
@@ -50,6 +54,7 @@ class EventParticipant {
         joinedAt: map['joinedAt'] is Timestamp
             ? (map['joinedAt'] as Timestamp).toDate()
             : DateTime.fromMillisecondsSinceEpoch(0),
+        displayName: _stringValue(map['displayName']).trim(),
       );
 }
 

@@ -194,11 +194,40 @@ class AuthRepository extends ChangeNotifier {
     _notify();
   }
 
+  /// 更新暱稱，並同步到自己所有報名資料上的 displayName，讓主揪名單顯示新暱稱。
   Future<void> updateUser(User updatedUser) async {
     if (updatedUser.id != _currentUser?.id) throw StateError('Not signed in');
-    await _firestore.collection('users').doc(updatedUser.id).update({
-      'name': updatedUser.name,
-    });
+    final name = updatedUser.name;
+    final stale = <DocumentReference<Map<String, dynamic>>>[];
+    // 與「我的場次」相同的查詢形狀，沿用既有的 collection-group 索引。
+    for (final status in ['attending', 'waitlisted']) {
+      final snapshot = await _firestore
+          .collectionGroup('participants')
+          .where('userId', isEqualTo: updatedUser.id)
+          .where('status', isEqualTo: status)
+          .orderBy('joinedAt')
+          .get();
+      for (final entry in snapshot.docs) {
+        if (entry.data()['displayName'] != name) stale.add(entry.reference);
+      }
+    }
+
+    // 規則用 getAfter 比對暱稱，所以使用者文件要放在第一批；每批最多 500 筆寫入。
+    var batch = _firestore.batch()
+      ..update(_firestore.collection('users').doc(updatedUser.id), {
+        'name': name,
+      });
+    var writes = 1;
+    for (final reference in stale) {
+      if (writes == 500) {
+        await batch.commit();
+        batch = _firestore.batch();
+        writes = 0;
+      }
+      batch.update(reference, {'displayName': name});
+      writes++;
+    }
+    await batch.commit();
     _currentUser = updatedUser;
     _notify();
   }
