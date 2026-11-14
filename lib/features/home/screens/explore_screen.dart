@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../../components/content_width.dart';
 import '../../../components/district_picker.dart';
 import '../../auth/repositories/auth_repository.dart';
 import '../../events/models/event_model.dart';
 import '../../events/repositories/event_repository.dart';
+import '../../events/widgets/event_card.dart';
 
 class ExploreScreen extends StatefulWidget {
   const ExploreScreen({super.key});
@@ -46,192 +48,149 @@ class _ExploreScreenState extends State<ExploreScreen> {
     if (picked != null && mounted) setState(() => _day = picked);
   }
 
+  Future<void> _logout(AuthRepository auth) async {
+    await auth.logout();
+    if (mounted && auth.errorMessage != null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(auth.errorMessage!)));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthRepository>();
     final repository = context.read<EventRepository>();
+    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('找打球場次'),
+        title: Row(
+          children: [
+            Icon(Icons.sports_basketball, color: theme.colorScheme.primary),
+            const SizedBox(width: 8),
+            const Text('揪咖 Jiuka'),
+          ],
+        ),
         actions: [
           if (auth.isAuthenticated) ...[
             IconButton(
               tooltip: '我的場次',
               onPressed: () => context.push('/my-events'),
-              icon: const Icon(Icons.event_note),
+              icon: const Icon(Icons.event_note_outlined),
             ),
-            IconButton(
-              tooltip: '我的球隊',
-              onPressed: () => context.push('/groups'),
-              icon: const Icon(Icons.groups),
-            ),
-            IconButton(
-              tooltip: '個人檔案',
-              onPressed: () => context.push('/profile'),
-              icon: const Icon(Icons.account_circle),
-            ),
-            IconButton(
-              tooltip: '登出',
-              onPressed: () async {
-                await auth.logout();
-                if (context.mounted && auth.errorMessage != null) {
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(SnackBar(content: Text(auth.errorMessage!)));
-                }
+            PopupMenuButton<String>(
+              tooltip: '帳號',
+              icon: const Icon(Icons.account_circle_outlined),
+              onSelected: (value) => switch (value) {
+                'logout' => _logout(auth),
+                _ => context.push(value),
               },
-              icon: const Icon(Icons.logout),
+              itemBuilder: (_) => [
+                PopupMenuItem(
+                  enabled: false,
+                  child: Text(auth.currentUser?.name ?? ''),
+                ),
+                const PopupMenuDivider(),
+                const PopupMenuItem(value: '/profile', child: Text('個人檔案')),
+                const PopupMenuItem(value: '/groups', child: Text('我的球隊')),
+                const PopupMenuItem(value: 'logout', child: Text('登出')),
+              ],
             ),
+            const SizedBox(width: 8),
           ] else
-            TextButton(
-              onPressed: () => context.push('/login?from=/'),
-              child: const Text('Google 登入'),
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: TextButton(
+                onPressed: () => context.push('/login?from=/'),
+                child: const Text('Google 登入'),
+              ),
             ),
         ],
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SizedBox(
-                  width: 180,
-                  child: DropdownButtonFormField<SportType?>(
-                    initialValue: _sport,
-                    decoration: const InputDecoration(labelText: '運動'),
-                    items: const [
-                      DropdownMenuItem(value: null, child: Text('全部')),
-                      DropdownMenuItem(
-                        value: SportType.basketball,
-                        child: Text('籃球'),
+      body: StreamBuilder<List<Event>>(
+        key: ValueKey((_sport, _city, _area, _day, _refresh)),
+        stream: repository.searchUpcomingEvents(
+          sport: _sport,
+          city: _city,
+          district: _district,
+          day: _day,
+        ),
+        builder: (context, snapshot) {
+          final events = snapshot.data;
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
+            children: [
+              ContentWidth(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      '找打球場次',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        fontWeight: FontWeight.w700,
                       ),
-                      DropdownMenuItem(
-                        value: SportType.badminton,
-                        child: Text('羽毛球'),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '籃球、羽球缺人就上揪咖，一起分攤場租',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
-                    ],
-                    onChanged: (value) => setState(() => _sport = value),
-                  ),
-                ),
-                SizedBox(
-                  width: 320,
-                  child: DistrictPicker(
-                    city: _city,
-                    area: _area,
-                    allowAny: true,
-                    onChanged: (city, area) => setState(() {
-                      _city = city;
-                      _area = area;
-                    }),
-                  ),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _pickDay,
-                  icon: const Icon(Icons.calendar_today),
-                  label: Text(
-                    _day == null
-                        ? '任何日期'
-                        : DateFormat('yyyy/MM/dd').format(_day!),
-                  ),
-                ),
-                if (_day != null)
-                  TextButton(
-                    onPressed: () => setState(() => _day = null),
-                    child: const Text('清除日期'),
-                  ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder<List<Event>>(
-              key: ValueKey((_sport, _city, _area, _day, _refresh)),
-              stream: repository.searchUpcomingEvents(
-                sport: _sport,
-                city: _city,
-                district: _district,
-                day: _day,
-              ),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('載入場次失敗，請檢查連線或稍後重試。'),
-                        TextButton(
+                    ),
+                    const SizedBox(height: 16),
+                    _filters(context),
+                    const SizedBox(height: 20),
+                    if (snapshot.hasError)
+                      _StatusMessage(
+                        icon: Icons.cloud_off_outlined,
+                        message: '載入場次失敗，請檢查連線或稍後重試。',
+                        action: OutlinedButton.icon(
                           onPressed: () => setState(() => _refresh++),
-                          child: const Text('重試'),
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('重新載入'),
                         ),
-                      ],
-                    ),
-                  );
-                }
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final events = snapshot.data!;
-                if (events.isEmpty) {
-                  return Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _hasActiveFilters ? '找不到符合條件的場次。' : '目前沒有開放報名的場次。',
+                      )
+                    else if (events == null)
+                      const Padding(
+                        padding: EdgeInsets.all(48),
+                        child: Center(child: CircularProgressIndicator()),
+                      )
+                    else if (events.isEmpty)
+                      _StatusMessage(
+                        icon: Icons.event_busy_outlined,
+                        message: _hasActiveFilters
+                            ? '找不到符合條件的場次'
+                            : '目前沒有開放報名的場次',
+                        action: _hasActiveFilters
+                            ? OutlinedButton.icon(
+                                onPressed: _clearFilters,
+                                icon: const Icon(Icons.filter_alt_off),
+                                label: const Text('清除篩選條件'),
+                              )
+                            : null,
+                      )
+                    else ...[
+                      Text(
+                        '共 ${events.length} 場',
+                        style: theme.textTheme.labelLarge?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
                         ),
-                        if (_hasActiveFilters) ...[
-                          const SizedBox(height: 8),
-                          OutlinedButton.icon(
-                            onPressed: _clearFilters,
-                            icon: const Icon(Icons.filter_alt_off),
-                            label: const Text('清除篩選條件'),
-                          ),
-                        ],
-                      ],
-                    ),
-                  );
-                }
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: events.length,
-                  itemBuilder: (context, index) {
-                    final event = events[index];
-                    final sportName = switch (event.sport) {
-                      SportType.basketball => '籃球',
-                      SportType.badminton => '羽毛球',
-                      null => '球類',
-                    };
-                    final amount = event.estimatedCostPerPerson(
-                      joining: !event.isFull,
-                    );
-                    final cost = event.costMode == CostMode.perPerson
-                        ? '每人固定 ${event.cost} 元'
-                        : amount == null
-                        ? '整場 ${event.cost} 元，待估算'
-                        : '整場 ${event.cost} 元，報名後每人預估 $amount 元';
-                    return Card(
-                      child: ListTile(
-                        title: Text(
-                          '$sportName · ${DateFormat('MM/dd HH:mm').format(event.startTime)}',
-                        ),
-                        subtitle: Text(
-                          '${event.district} · ${event.venue}\n'
-                          '尚缺 ${event.spotsLeft} 人 · $cost',
-                        ),
-                        isThreeLine: true,
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => context.push('/event/${event.id}'),
                       ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
+                      const SizedBox(height: 8),
+                      for (final event in events) ...[
+                        EventCard(
+                          event: event,
+                          onTap: () => context.push('/event/${event.id}'),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          );
+        },
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => auth.isAuthenticated
@@ -239,6 +198,105 @@ class _ExploreScreenState extends State<ExploreScreen> {
             : context.push('/login?from=/create-event'),
         icon: const Icon(Icons.add),
         label: const Text('發布缺人場次'),
+      ),
+    );
+  }
+
+  Widget _filters(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final (sport, label) in [
+                  (null, '全部'),
+                  (SportType.basketball, '籃球'),
+                  (SportType.badminton, '羽毛球'),
+                ])
+                  ChoiceChip(
+                    label: Text(label),
+                    avatar: sport == null ? null : Icon(sport.icon, size: 18),
+                    selected: _sport == sport,
+                    onSelected: (_) => setState(() => _sport = sport),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DistrictPicker(
+              city: _city,
+              area: _area,
+              allowAny: true,
+              onChanged: (city, area) => setState(() {
+                _city = city;
+                _area = area;
+              }),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _pickDay,
+                    icon: const Icon(Icons.calendar_today_outlined, size: 18),
+                    label: Text(
+                      _day == null
+                          ? '任何日期'
+                          : '${DateFormat('yyyy/MM/dd').format(_day!)} ${weekdayLabel(_day!)}',
+                    ),
+                  ),
+                ),
+                if (_day != null) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: '清除日期',
+                    onPressed: () => setState(() => _day = null),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+                if (_hasActiveFilters) ...[
+                  const SizedBox(width: 8),
+                  TextButton(
+                    onPressed: _clearFilters,
+                    child: const Text('清除篩選'),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusMessage extends StatelessWidget {
+  final IconData icon;
+  final String message;
+  final Widget? action;
+
+  const _StatusMessage({
+    required this.icon,
+    required this.message,
+    this.action,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48),
+      child: Column(
+        children: [
+          Icon(icon, size: 48, color: scheme.outline),
+          const SizedBox(height: 12),
+          Text(message, style: TextStyle(color: scheme.onSurfaceVariant)),
+          if (action != null) ...[const SizedBox(height: 16), action!],
+        ],
       ),
     );
   }

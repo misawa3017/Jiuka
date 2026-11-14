@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../../auth/repositories/auth_repository.dart';
 import '../models/event_model.dart';
 import '../repositories/event_repository.dart';
+import '../widgets/event_card.dart';
+import '../../../components/content_width.dart';
 
 class MyEventsScreen extends StatefulWidget {
   const MyEventsScreen({super.key});
@@ -106,6 +107,12 @@ class _UserEventListView extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                Icon(
+                  Icons.event_available_outlined,
+                  size: 48,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+                const SizedBox(height: 12),
                 Text(_emptyMessage),
                 const SizedBox(height: 8),
                 TextButton(
@@ -117,58 +124,22 @@ class _UserEventListView extends StatelessWidget {
           );
         }
 
+        final role = switch (list) {
+          UserEventList.organized => '主揪',
+          UserEventList.attending => '正取',
+          UserEventList.waitlisted => '候補',
+        };
         return ListView.separated(
           padding: const EdgeInsets.all(16),
           itemCount: events.length,
-          separatorBuilder: (_, _) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
-            final event = events[index];
-            final sport = switch (event.sport) {
-              SportType.basketball => '籃球',
-              SportType.badminton => '羽毛球',
-              null => '球類',
-            };
-            final role = switch (list) {
-              UserEventList.organized => '主揪',
-              UserEventList.attending => '正取',
-              UserEventList.waitlisted => '候補',
-            };
-            final cost = event.costMode == CostMode.perPerson
-                ? '每人 ${event.cost} 元'
-                : '場租 ${event.cost} 元 · 每人預估 ${event.estimatedCostPerPerson() ?? '待估'} 元';
-
-            return Card(
-              child: ListTile(
-                leading: CircleAvatar(
-                  child: Icon(
-                    event.sport == SportType.badminton
-                        ? Icons.sports_tennis
-                        : Icons.sports_basketball,
-                  ),
-                ),
-                title: Text('$sport · ${event.venue}'),
-                subtitle: Text(
-                  '${DateFormat('MM/dd (E) HH:mm').format(event.startTime)}'
-                  ' · ${event.district}\n'
-                  '$cost · ${event.occupiedCount}/${event.maxPlayers} 人',
-                ),
-                isThreeLine: true,
-                trailing: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(role),
-                    if (event.status != EventStatus.open)
-                      Text(
-                        event.status == EventStatus.cancelled ? '已取消' : '已截止',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                  ],
-                ),
-                onTap: () => context.push('/event/${event.id}'),
-              ),
-            );
-          },
+          separatorBuilder: (_, _) => const SizedBox(height: 12),
+          itemBuilder: (context, index) => ContentWidth(
+            child: EventCard(
+              event: events[index],
+              badge: role,
+              onTap: () => context.push('/event/${events[index].id}'),
+            ),
+          ),
         );
       },
     );

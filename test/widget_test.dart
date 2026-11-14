@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import 'package:jiuka/core/router/app_router.dart';
 import 'package:jiuka/features/auth/repositories/auth_repository.dart';
 import 'package:jiuka/features/auth/screens/login_screen.dart';
+import 'package:jiuka/features/events/screens/create_event_screen.dart';
 import 'support/auth_fixture.dart';
 
 void main() {
@@ -97,5 +98,25 @@ void main() {
     await tester.tap(find.text('報名'));
     await tester.pumpAndSettle();
     expect(find.text('使用 Google 帳號登入'), findsOneWidget);
+  });
+
+  testWidgets('發布表單在手機寬度分區顯示且不溢出', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(const MaterialApp(home: CreateEventScreen()));
+    await tester.pumpAndSettle();
+    for (final section in ['基本資訊', '時間', '人數']) {
+      expect(find.text(section), findsOneWidget);
+    }
+    expect(find.text('縣市'), findsOneWidget);
+    expect(find.text('發布場次'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('補充說明'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('費用'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

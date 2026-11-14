@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
@@ -13,6 +14,9 @@ import 'core/theme/app_theme.dart';
 import 'core/router/app_router.dart';
 
 Future<void> main() async {
+  // 使用 /event/xxx 形式的網址（預設是 /#/event/xxx），分享連結與重新整理才會進到正確頁面。
+  // Firebase Hosting 已設定把所有路徑導回 index.html。
+  usePathUrlStrategy();
   WidgetsFlutterBinding.ensureInitialized();
   if (!kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||

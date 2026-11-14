@@ -9,6 +9,8 @@ import '../../../components/ad_banner_widget.dart';
 import '../../auth/repositories/auth_repository.dart';
 import '../models/event_model.dart';
 import '../repositories/event_repository.dart';
+import '../widgets/event_card.dart';
+import '../../../components/content_width.dart';
 
 class EventDetailScreen extends StatefulWidget {
   final String eventId;
@@ -149,153 +151,444 @@ class _EventDetails extends StatelessWidget {
         !isWaitlisted &&
         !organizerAlreadyPlaying;
     final estimated = event.estimatedCostPerPerson(joining: joining);
-    final costText = event.costMode == CostMode.perPerson
-        ? '每人固定 ${event.cost} 元'
-        : estimated == null
-        ? '整場場租 ${event.cost} 元，待有人報名後估算'
-        : '整場場租 ${event.cost} 元；每人預估 $estimated 元';
-    final sportName = switch (event.sport) {
-      SportType.basketball => '籃球',
-      SportType.badminton => '羽毛球',
-      null => '球類',
-    };
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final isOrganizer = userId == event.organizerId;
+    final time = DateFormat('HH:mm');
+    final action = _primaryAction(
+      context,
+      canJoin: canJoin,
+      isAttending: isAttending,
+      isWaitlisted: isWaitlisted,
+      organizerAlreadyPlaying: organizerAlreadyPlaying,
+    );
 
     return Scaffold(
       appBar: AppBar(
-        title: Text('$sportName場次'),
+        title: Text('${event.sport.label}場次'),
         actions: [
           if (kIsWeb)
             IconButton(
               tooltip: '複製場次連結',
-              icon: const Icon(Icons.share),
+              icon: const Icon(Icons.ios_share),
               onPressed: onShare,
             ),
+          const SizedBox(width: 8),
         ],
       ),
+      bottomNavigationBar: action == null
+          ? null
+          : SafeArea(
+              child: Container(
+                decoration: BoxDecoration(
+                  color: scheme.surface,
+                  border: Border(top: BorderSide(color: scheme.outlineVariant)),
+                ),
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                child: ContentWidth(
+                  child: SizedBox(width: double.infinity, child: action),
+                ),
+              ),
+            ),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(
-            '$sportName · ${DateFormat('yyyy/MM/dd (EEE) HH:mm').format(event.startTime)}',
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 8),
-          Text('至 ${DateFormat('HH:mm').format(event.endTime)}'),
-          Text('${event.district} · ${event.venue}'),
-          if (event.description.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Text(event.description),
-          ],
-          const SizedBox(height: 20),
-          Text(costText, style: Theme.of(context).textTheme.titleMedium),
-          if (event.costMode == CostMode.totalVenue)
-            const Text('預估金額依目前確定人數計算，最終金額可能隨報名或取消變動。'),
-          const SizedBox(height: 12),
-          Text(
-            '已有人數 ${event.occupiedCount} / ${event.maxPlayers} · 尚缺 ${event.spotsLeft} 人',
-          ),
-          if (event.existingPlayers > 0)
-            Text(
-              '其中 ${event.existingPlayers} 人由主揪事先安排'
-              '${event.organizerPlaying ? '（含主揪）' : ''}',
-            ),
-          if (event.waitlistCount > 0) Text('目前候補 ${event.waitlistCount} 人'),
-          if (event.updatedAt case final updatedAt?)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                '主揪於 ${DateFormat('MM/dd HH:mm').format(updatedAt)} 更新過場次資訊',
-                style: TextStyle(color: Theme.of(context).colorScheme.primary),
-              ),
-            ),
-          if (event.status == EventStatus.cancelled)
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: Text(
-                '主揪已取消此場次',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            )
-          else if (!canJoin)
-            const Padding(
-              padding: EdgeInsets.only(top: 16),
-              child: Text('此場次已不開放報名'),
-            ),
-          const SizedBox(height: 24),
-          if (canJoin)
-            if (userId == null)
-              FilledButton(
-                onPressed: () => context.push(
-                  '/login?from=${Uri.encodeComponent('/event/${event.id}')}',
-                ),
-                child: const Text('使用 Google 登入後報名'),
-              )
-            else if (organizerAlreadyPlaying)
-              const Center(child: Text('你已以主揪身分計入名額'))
-            else if (isAttending || isWaitlisted)
-              OutlinedButton(
-                onPressed: () async {
-                  final confirmed = await showDialog<bool>(
-                    context: context,
-                    builder: (dialogContext) => AlertDialog(
-                      title: Text(isWaitlisted ? '取消候補？' : '取消報名？'),
-                      content: const Text('取消後名額與預估費用可能變動。'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, false),
-                          child: const Text('返回'),
+          ContentWidth(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (event.status == EventStatus.cancelled)
+                  _Banner(
+                    icon: Icons.event_busy,
+                    text: '主揪已取消此場次',
+                    color: scheme.error,
+                  )
+                else if (!canJoin)
+                  _Banner(
+                    icon: Icons.lock_clock_outlined,
+                    text: '此場次已不開放報名',
+                    color: scheme.outline,
+                  ),
+                if (event.updatedAt case final updatedAt?)
+                  _Banner(
+                    icon: Icons.update,
+                    text:
+                        '主揪於 ${DateFormat('MM/dd HH:mm').format(updatedAt)} 更新過場次資訊',
+                    color: scheme.primary,
+                  ),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(event.sport.icon, color: scheme.primary),
+                            const SizedBox(width: 8),
+                            Text(
+                              event.sport.label,
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                color: scheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (isAttending)
+                              _StatusChip(
+                                label: '你已報名（正取）',
+                                color: scheme.primary,
+                              )
+                            else if (isWaitlisted)
+                              _StatusChip(
+                                label: '你在候補中',
+                                color: scheme.tertiary,
+                              )
+                            else if (isOrganizer)
+                              _StatusChip(
+                                label: '你是主揪',
+                                color: scheme.secondary,
+                              ),
+                          ],
                         ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(dialogContext, true),
-                          child: const Text('確認取消'),
+                        const SizedBox(height: 12),
+                        Text(
+                          event.venue,
+                          style: theme.textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        _InfoRow(
+                          icon: Icons.calendar_today_outlined,
+                          text:
+                              '${DateFormat('yyyy/MM/dd').format(event.startTime)} ${weekdayLabel(event.startTime)}',
+                        ),
+                        _InfoRow(
+                          icon: Icons.schedule,
+                          text:
+                              '${time.format(event.startTime)} – ${time.format(event.endTime)}',
+                        ),
+                        _InfoRow(
+                          icon: Icons.place_outlined,
+                          text: event.district,
                         ),
                       ],
                     ),
-                  );
-                  if (confirmed != true || !context.mounted) return;
-                  try {
-                    await repository.leaveEvent(event.id, userId!);
-                  } catch (_) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('取消失敗，請稍後重試。')),
-                      );
-                    }
-                  }
-                },
-                child: Text(isWaitlisted ? '取消候補' : '取消報名'),
-              )
-            else
-              FilledButton(
-                onPressed: () async {
-                  try {
-                    final user = context.read<AuthRepository>().currentUser!;
-                    await repository.joinEvent(event.id, user.id, user.name);
-                  } catch (_) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('報名失敗，請稍後重試。')),
-                      );
-                    }
-                  }
-                },
-                child: Text(event.isFull ? '加入候補' : '我要報名'),
-              ),
-          const SizedBox(height: 24),
-          if (userId == event.organizerId && canJoin) ...[
-            const SizedBox(height: 16),
-            _OrganizerActions(event: event, repository: repository),
-          ],
-          if (userId == event.organizerId) ...[
-            const SizedBox(height: 16),
-            Text('正取與候補名單', style: Theme.of(context).textTheme.titleMedium),
-            _OrganizerRoster(
-              stream: repository.getParticipantsStream(event.id),
-              onRetry: onRetry,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(child: _capacityCard(context)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: _StatCard(
+                          icon: Icons.payments_outlined,
+                          label: event.costMode == CostMode.perPerson
+                              ? '每人費用'
+                              : '每人預估',
+                          value: event.costMode == CostMode.perPerson
+                              ? '${event.cost} 元'
+                              : estimated == null
+                              ? '待估算'
+                              : '約 $estimated 元',
+                          note: event.costMode == CostMode.perPerson
+                              ? '固定費用'
+                              : '整場場租 ${event.cost} 元，依確定人數平分，最終金額可能變動',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (event.description.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  SectionCard(
+                    title: '主揪補充說明',
+                    icon: Icons.notes,
+                    children: [Text(event.description)],
+                  ),
+                ],
+                if (isOrganizer && canJoin) ...[
+                  const SizedBox(height: 12),
+                  SectionCard(
+                    title: '主揪管理',
+                    icon: Icons.manage_accounts_outlined,
+                    children: [
+                      _OrganizerActions(event: event, repository: repository),
+                    ],
+                  ),
+                ],
+                if (isOrganizer) ...[
+                  const SizedBox(height: 12),
+                  SectionCard(
+                    title: '正取與候補名單',
+                    icon: Icons.groups_outlined,
+                    children: [
+                      _OrganizerRoster(
+                        stream: repository.getParticipantsStream(event.id),
+                        onRetry: onRetry,
+                      ),
+                    ],
+                  ),
+                ],
+                if (kIsWeb) ...[
+                  const SizedBox(height: 24),
+                  const AdBannerWidget(),
+                ],
+              ],
             ),
-          ],
-          if (kIsWeb) ...[const SizedBox(height: 24), const AdBannerWidget()],
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _capacityCard(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final progress = event.maxPlayers == 0
+        ? 0.0
+        : (event.occupiedCount / event.maxPlayers).clamp(0.0, 1.0);
+    final notes = [
+      if (event.organizerPlaying)
+        event.existingPlayers > 1
+            ? '含主揪與已約 ${event.existingPlayers - 1} 人'
+            : '含主揪本人'
+      else if (event.existingPlayers > 0)
+        '含已約 ${event.existingPlayers} 人',
+      if (event.waitlistCount > 0) '候補 ${event.waitlistCount} 人',
+    ];
+    return _StatCard(
+      icon: Icons.group_outlined,
+      label: '名額 ${event.occupiedCount} / ${event.maxPlayers}',
+      value: event.isFull ? '已額滿' : '尚缺 ${event.spotsLeft} 人',
+      valueColor: event.isFull ? scheme.tertiary : scheme.primary,
+      note: notes.isEmpty ? null : notes.join(' · '),
+      extra: ClipRRect(
+        borderRadius: BorderRadius.circular(4),
+        child: LinearProgressIndicator(
+          value: progress,
+          minHeight: 6,
+          backgroundColor: scheme.surfaceContainerHighest,
+          color: event.isFull ? scheme.tertiary : scheme.primary,
+        ),
+      ),
+    );
+  }
+
+  /// 底部固定的主要操作；沒有可做的操作時回傳 null。
+  Widget? _primaryAction(
+    BuildContext context, {
+    required bool canJoin,
+    required bool isAttending,
+    required bool isWaitlisted,
+    required bool organizerAlreadyPlaying,
+  }) {
+    if (!canJoin) return null;
+    if (userId == null) {
+      return FilledButton.icon(
+        onPressed: () => context.push(
+          '/login?from=${Uri.encodeComponent('/event/${event.id}')}',
+        ),
+        icon: const Icon(Icons.login),
+        label: const Text('使用 Google 登入後報名'),
+      );
+    }
+    if (organizerAlreadyPlaying) return null;
+    if (isAttending || isWaitlisted) {
+      return OutlinedButton(
+        onPressed: () async {
+          final confirmed = await showDialog<bool>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: Text(isWaitlisted ? '取消候補？' : '取消報名？'),
+              content: const Text('取消後名額與預估費用可能變動。'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, false),
+                  child: const Text('返回'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, true),
+                  child: const Text('確認取消'),
+                ),
+              ],
+            ),
+          );
+          if (confirmed != true || !context.mounted) return;
+          try {
+            await repository.leaveEvent(event.id, userId!);
+          } catch (_) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(
+                context,
+              ).showSnackBar(const SnackBar(content: Text('取消失敗，請稍後重試。')));
+            }
+          }
+        },
+        child: Text(isWaitlisted ? '取消候補' : '取消報名'),
+      );
+    }
+    return FilledButton.icon(
+      onPressed: () async {
+        try {
+          final user = context.read<AuthRepository>().currentUser!;
+          await repository.joinEvent(event.id, user.id, user.name);
+        } catch (_) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('報名失敗，請稍後重試。')));
+          }
+        }
+      },
+      icon: Icon(event.isFull ? Icons.hourglass_empty : Icons.how_to_reg),
+      label: Text(event.isFull ? '加入候補' : '我要報名'),
+    );
+  }
+}
+
+class _Banner extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+  const _Banner({required this.icon, required this.text, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: TextStyle(color: color, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  final String label;
+  final Color color;
+  const _StatusChip({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelMedium?.copyWith(
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _InfoRow({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(text, style: Theme.of(context).textTheme.bodyLarge),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? valueColor;
+  final String? note;
+  final Widget? extra;
+
+  const _StatCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.valueColor,
+    this.note,
+    this.extra,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 18, color: scheme.onSurfaceVariant),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              value,
+              style: theme.textTheme.titleLarge?.copyWith(
+                color: valueColor,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (extra != null) ...[const SizedBox(height: 10), extra!],
+            if (note != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                note!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
@@ -405,14 +698,34 @@ class _OrganizerRoster extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('正取球友'),
+            _RosterHeading(label: '正取', count: attendees.length),
             _Roster(users: attendees),
-            const SizedBox(height: 8),
-            const Text('候補球友'),
+            const SizedBox(height: 12),
+            _RosterHeading(label: '候補', count: waitlist.length),
             _Roster(users: waitlist),
           ],
         );
       },
+    );
+  }
+}
+
+class _RosterHeading extends StatelessWidget {
+  final String label;
+  final int count;
+  const _RosterHeading({required this.label, required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Text(
+        '$label $count 人',
+        style: theme.textTheme.labelLarge?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
     );
   }
 }
@@ -423,16 +736,36 @@ class _Roster extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (users.isEmpty) return const Text('目前沒有球友');
+    final scheme = Theme.of(context).colorScheme;
+    if (users.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Text('目前沒有球友', style: TextStyle(color: scheme.outline)),
+      );
+    }
     return Column(
       children: [
         for (var index = 0; index < users.length; index++)
           ListTile(
-            leading: CircleAvatar(child: Text('${index + 1}')),
+            contentPadding: EdgeInsets.zero,
+            dense: true,
+            leading: CircleAvatar(
+              backgroundColor: scheme.primaryContainer,
+              foregroundColor: scheme.onPrimaryContainer,
+              child: Text(
+                users[index].displayName.isEmpty
+                    ? '${index + 1}'
+                    : users[index].displayName.characters.first,
+              ),
+            ),
             title: Text(
               users[index].displayName.isEmpty
                   ? '球友 ${index + 1}'
                   : users[index].displayName,
+            ),
+            trailing: Text(
+              '#${index + 1}',
+              style: TextStyle(color: scheme.outline),
             ),
           ),
       ],
