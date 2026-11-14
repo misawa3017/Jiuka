@@ -116,6 +116,19 @@ void main() {
     expect(leftEventId, 'game');
   });
 
+  test('記錄出席與收款只寫入有指定的欄位', () async {
+    final writes = <Map<Object, Object?>>[];
+    when(() => participantRef.update(any())).thenAnswer((invocation) async {
+      writes.add(invocation.positionalArguments.first as Map<Object, Object?>);
+    });
+    await repository.markParticipant('game', 'first', attended: true);
+    await repository.markParticipant('game', 'first', paid: false);
+    expect(writes, [
+      {'attended': true},
+      {'paid': false},
+    ]);
+  });
+
   test('管理者移除報名者交給 Cloud Function', () async {
     (String, String)? removed;
     repository = EventRepository(

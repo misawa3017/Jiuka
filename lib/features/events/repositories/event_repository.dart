@@ -86,6 +86,21 @@ class EventRepository extends ChangeNotifier {
     });
   }
 
+  /// 主揪或管理者記錄出席與收款；規則只允許改這兩個欄位。
+  Future<void> markParticipant(
+    String eventId,
+    String userId, {
+    bool? attended,
+    bool? paid,
+  }) async {
+    await _firestore
+        .collection('events')
+        .doc(eventId)
+        .collection('participants')
+        .doc(userId)
+        .update({'attended': ?attended, 'paid': ?paid});
+  }
+
   /// 系統管理者把球友移出名單；正取被移除時候補會自動遞補（Cloud Function）。
   Future<void> removeParticipant(String eventId, String userId) async {
     if (_submitRemoval case final submit?) {

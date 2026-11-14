@@ -70,6 +70,19 @@ void main() {
     expect(legacy.cancelledAt, isNull);
   });
 
+  test('報名者的出席與收款狀態，舊資料預設為未記錄', () {
+    final marked = EventParticipant.fromMap({
+      'status': 'attending',
+      'attended': true,
+      'paid': true,
+    }, 'u1');
+    expect(marked.attended, isTrue);
+    expect(marked.paid, isTrue);
+    final legacy = EventParticipant.fromMap({'status': 'attending'}, 'u2');
+    expect(legacy.attended, isFalse);
+    expect(legacy.paid, isFalse);
+  });
+
   test('主揪暱稱可往返，舊場次沒有時為空字串', () {
     final game = event().copyWith(organizerName: '小明');
     expect(game.toMap()['organizerName'], '小明');

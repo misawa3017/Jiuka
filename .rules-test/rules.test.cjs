@@ -137,6 +137,16 @@ async function main() {
     await assertFails(getDocs(roster(password)));
     await assertFails(getDoc(rosterEntry(bob, 'carol')));
     assert.equal((await getDoc(rosterEntry(alice, 'bob'))).data().displayName, 'Bob');
+    // 出席與收款：主揪與管理者可記錄，只能是布林；球友本人與其他人不行。
+    await assertSucceeds(updateDoc(rosterEntry(alice, 'bob'), { attended: true, paid: false }));
+    await assertSucceeds(updateDoc(rosterEntry(root, 'bob'), { paid: true }));
+    await assertFails(updateDoc(rosterEntry(alice, 'bob'), { attended: 'yes' }));
+    await assertFails(updateDoc(rosterEntry(alice, 'bob'), { paid: true, status: 'waitlisted' }));
+    await assertFails(updateDoc(rosterEntry(bob, 'bob'), { paid: false }));
+    await assertFails(updateDoc(rosterEntry(carol, 'bob'), { attended: false }));
+    const marked = (await getDoc(rosterEntry(alice, 'bob'))).data();
+    assert.equal(marked.attended, true);
+    assert.equal(marked.paid, true);
     // 管理者可讀任何場次的名單。
     await assertSucceeds(getDocs(roster(root)));
     await assertSucceeds(getDoc(rosterEntry(root, 'bob')));
@@ -149,7 +159,7 @@ async function main() {
     assert.equal((await getDoc(rosterEntry(alice, 'bob'))).data().displayName, 'Bobby');
     await assertFails(updateDoc(rosterEntry(bob, 'bob'), { displayName: '假名字' }));
     await assertFails(updateDoc(rosterEntry(bob, 'bob'), { displayName: 'Bobby', status: 'waitlisted' }));
-    await assertFails(updateDoc(rosterEntry(alice, 'bob'), { displayName: 'Bobby' }));
+    await assertFails(updateDoc(rosterEntry(alice, 'bob'), { displayName: 'Robert' }));
     await assertFails(updateDoc(rosterEntry(carol, 'bob'), { displayName: 'Carol' }));
     assert.equal((await getDoc(game(guest))).data().attendeeCount, 1);
     assert.equal((await getDoc(game(guest))).data().waitlistCount, 1);

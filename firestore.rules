@@ -172,9 +172,16 @@ service cloud.firestore {
           );
         // 本人改暱稱時同步名單上的暱稱；只能改 displayName，且必須等於（同批寫入後的）自己的暱稱。
         allow update: if googleUser()
-          && request.auth.uid == participantId
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName'])
-          && request.resource.data.displayName == ownName();
+          && (
+            request.auth.uid == participantId
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName'])
+              && request.resource.data.displayName == ownName()
+            // 主揪或管理者記錄出席與收款；只能改這兩個布林欄位，場次開始後也可以記錄。
+            || (eventOrganizer(request.auth.uid) || isAdmin())
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['attended', 'paid'])
+              && (!('attended' in request.resource.data) || request.resource.data.attended is bool)
+              && (!('paid' in request.resource.data) || request.resource.data.paid is bool)
+          );
         allow delete: if false;
       }
 

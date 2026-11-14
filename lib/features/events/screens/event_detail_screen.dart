@@ -350,6 +350,11 @@ class _EventDetails extends StatelessWidget {
                             ? (participant) =>
                                   _confirmRemove(context, participant)
                             : null,
+                        // 已取消的場次不需要記錄出席與收款。
+                        onMark: event.status == EventStatus.cancelled
+                            ? null
+                            : (participant, {attended, paid}) =>
+                                  _mark(context, participant, attended, paid),
                       ),
                     ],
                   ),
@@ -396,6 +401,28 @@ class _EventDetails extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _mark(
+    BuildContext context,
+    EventParticipant participant,
+    bool? attended,
+    bool? paid,
+  ) async {
+    try {
+      await repository.markParticipant(
+        event.id,
+        participant.userId,
+        attended: attended,
+        paid: paid,
+      );
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('記錄失敗，請稍後重試。')));
+      }
+    }
   }
 
   Future<void> _confirmRemove(
@@ -732,11 +759,18 @@ class _OrganizerRoster extends StatelessWidget {
   final Stream<List<EventParticipant>> stream;
   final VoidCallback onRetry;
   final void Function(EventParticipant participant)? onRemove;
+  final void Function(
+    EventParticipant participant, {
+    bool? attended,
+    bool? paid,
+  })?
+  onMark;
 
   const _OrganizerRoster({
     required this.stream,
     required this.onRetry,
     this.onRemove,
+    this.onMark,
   });
 
   @override
@@ -768,8 +802,15 @@ class _OrganizerRoster extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _RosterHeading(label: '正取', count: attendees.length),
-            _Roster(users: attendees, onRemove: onRemove),
+            _RosterHeading(
+              label: '正取',
+              count: attendees.length,
+              extra: attendees.isEmpty
+                  ? null
+                  : '到場 ${attendees.where((p) => p.attended).length}'
+                        ' · 已付 ${attendees.where((p) => p.paid).length}',
+            ),
+            _Roster(users: attendees, onRemove: onRemove, onMark: onMark),
             const SizedBox(height: 12),
             _RosterHeading(label: '候補', count: waitlist.length),
             _Roster(users: waitlist, onRemove: onRemove),
@@ -783,7 +824,8 @@ class _OrganizerRoster extends StatelessWidget {
 class _RosterHeading extends StatelessWidget {
   final String label;
   final int count;
-  const _RosterHeading({required this.label, required this.count});
+  final String? extra;
+  const _RosterHeading({required this.label, required this.count, this.extra});
 
   @override
   Widget build(BuildContext context) {
@@ -791,7 +833,7 @@ class _RosterHeading extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Text(
-        '$label $count 人',
+        extra == null ? '$label $count 人' : '$label $count 人 · $extra',
         style: theme.textTheme.labelLarge?.copyWith(
           color: theme.colorScheme.onSurfaceVariant,
         ),
@@ -803,7 +845,15 @@ class _RosterHeading extends StatelessWidget {
 class _Roster extends StatelessWidget {
   final List<EventParticipant> users;
   final void Function(EventParticipant participant)? onRemove;
-  const _Roster({required this.users, this.onRemove});
+
+  /// 有值時（正取名單）顯示「到場」「已付」標記，點一下切換。
+  final void Function(
+    EventParticipant participant, {
+    bool? attended,
+    bool? paid,
+  })?
+  onMark;
+  const _Roster({required this.users, this.onRemove, this.onMark});
 
   @override
   Widget build(BuildContext context) {
@@ -834,6 +884,30 @@ class _Roster extends StatelessWidget {
                   ? '球友 ${index + 1}'
                   : users[index].displayName,
             ),
+            subtitle: onMark == null
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Wrap(
+                      spacing: 6,
+                      children: [
+                        FilterChip(
+                          visualDensity: VisualDensity.compact,
+                          label: const Text('到場'),
+                          selected: users[index].attended,
+                          onSelected: (value) =>
+                              onMark!(users[index], attended: value),
+                        ),
+                        FilterChip(
+                          visualDensity: VisualDensity.compact,
+                          label: const Text('已付'),
+                          selected: users[index].paid,
+                          onSelected: (value) =>
+                              onMark!(users[index], paid: value),
+                        ),
+                      ],
+                    ),
+                  ),
             trailing: onRemove == null
                 ? Text('#${index + 1}', style: TextStyle(color: scheme.outline))
                 : IconButton(

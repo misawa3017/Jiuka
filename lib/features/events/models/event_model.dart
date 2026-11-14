@@ -40,11 +40,17 @@ class EventParticipant {
   /// 報名時的暱稱；改暱稱時會同步。舊資料沒有這個欄位時為空字串。
   final String displayName;
 
+  /// 主揪記錄的出席與收款狀態；未記錄時為 false。
+  final bool attended;
+  final bool paid;
+
   const EventParticipant({
     required this.userId,
     required this.status,
     required this.joinedAt,
     this.displayName = '',
+    this.attended = false,
+    this.paid = false,
   });
 
   factory EventParticipant.fromMap(Map<String, dynamic> map, String userId) =>
@@ -57,6 +63,8 @@ class EventParticipant {
             ? (map['joinedAt'] as Timestamp).toDate()
             : DateTime.fromMillisecondsSinceEpoch(0),
         displayName: _stringValue(map['displayName']).trim(),
+        attended: _boolValue(map['attended'], false),
+        paid: _boolValue(map['paid'], false),
       );
 }
 
