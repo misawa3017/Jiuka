@@ -124,12 +124,12 @@ class EventRepository extends ChangeNotifier {
     });
   }
 
-  /// 管理後台用：所有場次（含已取消、已結束），由新到舊，最多 200 場。
-  Stream<List<Event>> getAllEventsStream() {
+  /// 管理後台用：所有場次（含已取消、已結束），由新到舊；用 [limit] 分頁載入。
+  Stream<List<Event>> getAllEventsStream({int limit = 50}) {
     return _firestore
         .collection('events')
         .orderBy('startTime', descending: true)
-        .limit(200)
+        .limit(limit)
         .snapshots()
         .map(
           (snapshot) => snapshot.docs
@@ -152,6 +152,7 @@ class EventRepository extends ChangeNotifier {
     String? city,
     String? district,
     DateTime? day,
+    int limit = 30,
   }) {
     final now = DateTime.now();
     final startOfDay = day == null
@@ -178,7 +179,7 @@ class EventRepository extends ChangeNotifier {
     }
     return query
         .orderBy('startTime')
-        .limit(100)
+        .limit(limit)
         .snapshots()
         .map(
           (snapshot) => snapshot.docs

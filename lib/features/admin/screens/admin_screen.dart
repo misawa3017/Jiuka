@@ -20,9 +20,18 @@ class AdminScreen extends StatefulWidget {
 
 class _AdminScreenState extends State<AdminScreen> {
   _AdminFilter _filter = _AdminFilter.all;
-  late final Stream<List<Event>> _events = context
-      .read<EventRepository>()
-      .getAllEventsStream();
+  static const _pageSize = 50;
+  int _limit = _pageSize;
+  // StreamBuilder 換 stream 時會保留上一批資料，所以載入更多時清單不會閃。
+  late Stream<List<Event>> _events = _load();
+
+  Stream<List<Event>> _load() =>
+      context.read<EventRepository>().getAllEventsStream(limit: _limit);
+
+  void _loadMore() => setState(() {
+    _limit += _pageSize;
+    _events = _load();
+  });
 
   bool _matches(Event event, DateTime now) => switch (_filter) {
     _AdminFilter.all => true,
@@ -85,11 +94,11 @@ class _AdminScreenState extends State<AdminScreen> {
                         _Stat(label: '報名與候補人次', value: signups),
                       ],
                     ),
-                    if (events.length >= 200)
+                    if (events.length >= _limit)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text(
-                          '只列出最近 200 場，統計也只計算這些場次。',
+                          '目前載入最近 ${events.length} 場，統計只計算已載入的場次。',
                           style: theme.textTheme.bodySmall,
                         ),
                       ),
@@ -124,6 +133,18 @@ class _AdminScreenState extends State<AdminScreen> {
                       ),
                       const SizedBox(height: 12),
                     ],
+                    if (events.length >= _limit)
+                      Center(
+                        child: OutlinedButton.icon(
+                          onPressed:
+                              snapshot.connectionState ==
+                                  ConnectionState.waiting
+                              ? null
+                              : _loadMore,
+                          icon: const Icon(Icons.expand_more),
+                          label: const Text('載入更多'),
+                        ),
+                      ),
                   ],
                 ),
               ),

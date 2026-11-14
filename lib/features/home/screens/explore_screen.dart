@@ -25,13 +25,27 @@ class _ExploreScreenState extends State<ExploreScreen> {
   DateTime? _day;
   int _refresh = 0;
 
+  // 分頁：先載入 [_pageSize] 場，按「載入更多」再加一頁。
+  static const _pageSize = 30;
+  int _limit = _pageSize;
+
+  // 載入更多時沿用上一批結果，避免清單閃成載入中；篩選條件改變時不沿用。
+  (Object, List<Event>)? _cache;
+  Object get _filterKey => (_sport, _city, _area, _day, _refresh);
+
+  /// 改變篩選條件時回到第一頁。
+  void _setFilter(VoidCallback change) => setState(() {
+    change();
+    _limit = _pageSize;
+  });
+
   String? get _district =>
       _city != null && _area != null ? '$_city$_area' : null;
 
   bool get _hasActiveFilters => _sport != null || _city != null || _day != null;
 
   void _clearFilters() {
-    setState(() {
+    _setFilter(() {
       _sport = null;
       _city = null;
       _area = null;
@@ -47,7 +61,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
       firstDate: DateTime(now.year, now.month, now.day),
       lastDate: now.add(const Duration(days: 365)),
     );
-    if (picked != null && mounted) setState(() => _day = picked);
+    if (picked != null && mounted) _setFilter(() => _day = picked);
   }
 
   Future<void> _logout(AuthRepository auth) async {
@@ -116,15 +130,20 @@ class _ExploreScreenState extends State<ExploreScreen> {
         ],
       ),
       body: StreamBuilder<List<Event>>(
-        key: ValueKey((_sport, _city, _area, _day, _refresh)),
+        key: ValueKey((_filterKey, _limit)),
         stream: repository.searchUpcomingEvents(
           sport: _sport,
           city: _city,
           district: _district,
           day: _day,
+          limit: _limit,
         ),
         builder: (context, snapshot) {
-          final events = snapshot.data;
+          if (snapshot.data case final data?) _cache = (_filterKey, data);
+          final cached = _cache;
+          final events =
+              snapshot.data ??
+              (cached != null && cached.$1 == _filterKey ? cached.$2 : null);
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
             children: [
@@ -179,7 +198,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       )
                     else ...[
                       Text(
-                        '共 ${events.length} 場',
+                        events.length >= _limit
+                            ? '已顯示 ${events.length} 場'
+                            : '共 ${events.length} 場',
                         style: theme.textTheme.labelLarge?.copyWith(
                           color: theme.colorScheme.onSurfaceVariant,
                         ),
@@ -192,6 +213,19 @@ class _ExploreScreenState extends State<ExploreScreen> {
                         ),
                         const SizedBox(height: 12),
                       ],
+                      // 剛好載滿一頁，代表可能還有更多。
+                      if (events.length >= _limit)
+                        Center(
+                          child: OutlinedButton.icon(
+                            onPressed: snapshot.data == null
+                                ? null
+                                : () => setState(() => _limit += _pageSize),
+                            icon: const Icon(Icons.expand_more),
+                            label: Text(
+                              snapshot.data == null ? '載入中…' : '載入更多',
+                            ),
+                          ),
+                        ),
                     ],
                   ],
                 ),
@@ -230,7 +264,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                     label: Text(label),
                     avatar: sport == null ? null : Icon(sport.icon, size: 18),
                     selected: _sport == sport,
-                    onSelected: (_) => setState(() => _sport = sport),
+                    onSelected: (_) => _setFilter(() => _sport = sport),
                   ),
               ],
             ),
@@ -239,7 +273,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               city: _city,
               area: _area,
               allowAny: true,
-              onChanged: (city, area) => setState(() {
+              onChanged: (city, area) => _setFilter(() {
                 _city = city;
                 _area = area;
               }),
@@ -262,7 +296,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   const SizedBox(width: 8),
                   IconButton(
                     tooltip: '清除日期',
-                    onPressed: () => setState(() => _day = null),
+                    onPressed: () => _setFilter(() => _day = null),
                     icon: const Icon(Icons.close),
                   ),
                 ],
