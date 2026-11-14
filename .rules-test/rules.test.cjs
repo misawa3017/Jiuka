@@ -90,7 +90,18 @@ async function main() {
     await assertSucceeds(getDocs(query(
       collectionGroup(carol, 'participants'), where('userId', '==', 'carol'),
     )));
-    await assertSucceeds(getDocs(collection(alice, 'events', 'game', 'participants')));
+    // 主揪名單：主揪可讀整份名單與個別報名者，其他人不行。
+    const roster = (store) => collection(store, 'events', 'game', 'participants');
+    const rosterEntry = (store, uid) => doc(store, 'events', 'game', 'participants', uid);
+    await assertSucceeds(getDocs(roster(alice)));
+    assert.equal((await getDocs(roster(alice))).size, 2);
+    await assertSucceeds(getDoc(rosterEntry(alice, 'bob')));
+    await assertSucceeds(getDoc(rosterEntry(alice, 'carol')));
+    await assertFails(getDocs(roster(bob)));
+    await assertFails(getDocs(roster(carol)));
+    await assertFails(getDocs(roster(guest)));
+    await assertFails(getDocs(roster(password)));
+    await assertFails(getDoc(rosterEntry(bob, 'carol')));
     assert.equal((await getDoc(game(guest))).data().attendeeCount, 1);
     assert.equal((await getDoc(game(guest))).data().waitlistCount, 1);
     await assertFails(deleteDoc(doc(alice, 'events', 'game', 'participants', 'bob')));
