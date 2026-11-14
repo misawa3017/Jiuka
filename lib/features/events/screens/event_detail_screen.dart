@@ -345,8 +345,8 @@ class _EventDetails extends StatelessWidget {
                       _OrganizerRoster(
                         stream: repository.getParticipantsStream(event.id),
                         onRetry: onRetry,
-                        // 只有管理者可以移除報名者，且場次仍開放時才有意義。
-                        onRemove: isAdmin && canJoin
+                        // 主揪與管理者可移除報名者，且場次仍開放時才有意義。
+                        onRemove: canManage && canJoin
                             ? (participant) =>
                                   _confirmRemove(context, participant)
                             : null,

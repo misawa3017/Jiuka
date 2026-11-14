@@ -129,7 +129,7 @@ void main() {
     ]);
   });
 
-  test('管理者移除報名者交給 Cloud Function', () async {
+  test('主揪或管理者移除報名者交給 Cloud Function', () async {
     (String, String)? removed;
     repository = EventRepository(
       firestore: store,

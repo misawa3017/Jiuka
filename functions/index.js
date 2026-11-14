@@ -46,7 +46,7 @@ function requireOpen(event, message) {
  * 把 uid 從場次名單移除；若移除的是正取且有候補，依報名順序遞補第一位。
  * 退出報名（本人）與管理者移除共用。
  */
-async function removeFromEvent(eventId, uid, closedMessage) {
+async function removeFromEvent(eventId, uid, closedMessage, authorize = async () => {}) {
   const eventRef = db.collection('events').doc(eventId);
   const participantRef = eventRef.collection('participants').doc(uid);
   return db.runTransaction(async (transaction) => {
@@ -57,9 +57,11 @@ async function removeFromEvent(eventId, uid, closedMessage) {
     if (!eventSnapshot.exists) {
       throw new HttpsError('not-found', '找不到場次。');
     }
+    const event = eventSnapshot.data();
+    // 先檢查權限，避免無權限者藉由回應判斷某人是否在名單中。
+    await authorize(event, transaction);
     if (!participantSnapshot.exists) return { left: false };
 
-    const event = eventSnapshot.data();
     const participant = participantSnapshot.data();
     requireOpen(event, closedMessage);
 
@@ -196,15 +198,23 @@ exports.leaveEvent = onCall(async (request) => {
   return removeFromEvent(eventId, uid, '場次已開始或不開放取消。');
 });
 
-// 系統管理者把某位球友移出名單；正取被移除時候補會自動遞補。
+// 主揪或系統管理者把某位球友移出名單；正取被移除時候補會自動遞補。
 exports.removeParticipant = onCall(async (request) => {
   const uid = requireGoogleUser(request, 'Google 登入後才能管理名單。');
   const eventId = requireId(request.data?.eventId, '場次編號無效。');
   const userId = requireId(request.data?.userId, '球友編號無效。');
-  if (!(await adminRef(uid).get()).exists) {
-    throw new HttpsError('permission-denied', '只有系統管理者可以移除報名者。');
-  }
-  const result = await removeFromEvent(eventId, userId, '場次已開始或已取消，不能移除報名者。');
+  const authorize = async (event, transaction) => {
+    if (event.organizerId === uid) return;
+    if (!(await transaction.get(adminRef(uid))).exists) {
+      throw new HttpsError('permission-denied', '只有主揪或系統管理者可以移除報名者。');
+    }
+  };
+  const result = await removeFromEvent(
+    eventId,
+    userId,
+    '場次已開始或已取消，不能移除報名者。',
+    authorize,
+  );
   if (!result.left) {
     throw new HttpsError('not-found', '這位球友不在名單中。');
   }

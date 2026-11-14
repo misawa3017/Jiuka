@@ -101,7 +101,7 @@ class EventRepository extends ChangeNotifier {
         .update({'attended': ?attended, 'paid': ?paid});
   }
 
-  /// 系統管理者把球友移出名單；正取被移除時候補會自動遞補（Cloud Function）。
+  /// 主揪或系統管理者把球友移出名單；正取被移除時候補會自動遞補（Cloud Function）。
   Future<void> removeParticipant(String eventId, String userId) async {
     if (_submitRemoval case final submit?) {
       await submit(eventId, userId);
