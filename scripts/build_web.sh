@@ -3,8 +3,9 @@
 # 每次都從 Firebase CLI 重新取得設定值，缺任何一項就停止，避免 build 出無法啟動的網站。
 #
 # 用法：scripts/build_web.sh [專案 ID]   （預設讀 .firebaserc 的 default）
-# 瀏覽器推播（選用）：先 export FIREBASE_VAPID_KEY=<Firebase Console → 專案設定 →
-# Cloud Messaging → 網路推播憑證的金鑰組>；沒有設定時推播停用，站內通知照常運作。
+# 瀏覽器推播（選用）：VAPID 公開金鑰（Firebase Console → 專案設定 → Cloud Messaging →
+# 網路推播憑證）放在 config/vapid_public_keys.json，或用 FIREBASE_VAPID_KEY 環境變數覆寫；
+# 沒有設定時推播停用，站內通知照常運作。
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -30,6 +31,11 @@ for name in API_KEY PROJECT_ID SENDER_ID AUTH_DOMAIN; do
     exit 1
   fi
 done
+
+# 瀏覽器推播的 VAPID 公開金鑰：優先用環境變數，否則讀 config/vapid_public_keys.json。
+if [[ -z "${FIREBASE_VAPID_KEY:-}" && -f config/vapid_public_keys.json ]]; then
+  FIREBASE_VAPID_KEY="$(python3 -c 'import json,sys; print(json.load(open("config/vapid_public_keys.json")).get(sys.argv[1], ""))' "$PROJECT_ID")"
+fi
 
 echo "使用專案 $PROJECT_ID 的設定 build Web…"
 flutter build web \
