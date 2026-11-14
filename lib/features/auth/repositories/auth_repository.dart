@@ -131,7 +131,22 @@ class AuthRepository extends ChangeNotifier {
     }
   }
 
-  /// 補上自己發布場次中缺少或過期的主揪暱稱（舊版場次沒有 organizerName）。
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _myGroups(
+    String userId,
+  ) async =>
+      (await _firestore
+              .collection('groups')
+              .where('memberIds', arrayContains: userId)
+              .get())
+          .docs;
+
+  static Object? _memberName(Map<String, dynamic> group, String userId) {
+    final names = group['memberNames'];
+    return names is Map ? names[userId] : null;
+  }
+
+  /// 補上自己發布場次中缺少或過期的主揪暱稱（舊版場次沒有 organizerName），
+  /// 以及已加入球隊中自己的成員暱稱（舊版球隊沒有 memberNames）。
   ///
   /// 登入後在背景執行，不阻擋登入；失敗只記錄，下次登入會再試。
   @visibleForTesting
@@ -155,6 +170,22 @@ class AuthRepository extends ChangeNotifier {
       }
     } catch (error) {
       debugPrint('補上主揪暱稱失敗：$error');
+    }
+    try {
+      final groups = [
+        for (final group in await _myGroups(profile.id))
+          if (_memberName(group.data(), profile.id) != profile.name)
+            group.reference,
+      ];
+      for (var start = 0; start < groups.length; start += 500) {
+        final batch = _firestore.batch();
+        for (final reference in groups.skip(start).take(500)) {
+          batch.update(reference, {'memberNames.${profile.id}': profile.name});
+        }
+        await batch.commit();
+      }
+    } catch (error) {
+      debugPrint('補上球隊成員暱稱失敗：$error');
     }
   }
 
@@ -278,6 +309,13 @@ class AuthRepository extends ChangeNotifier {
     for (final event in organized.docs) {
       if (event.data()['organizerName'] != name) {
         stale.add((event.reference, 'organizerName'));
+      }
+    }
+
+    // 已加入的球隊也記錄了自己的暱稱，一併同步。
+    for (final group in await _myGroups(updatedUser.id)) {
+      if (_memberName(group.data(), updatedUser.id) != name) {
+        stale.add((group.reference, 'memberNames.${updatedUser.id}'));
       }
     }
 

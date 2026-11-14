@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../components/content_width.dart';
 import 'package:provider/provider.dart';
 
 import '../../auth/repositories/auth_repository.dart';
@@ -48,37 +50,64 @@ class MemberManagementScreen extends StatelessWidget {
       );
     }
 
+    // 管理員排第一，其餘依加入順序。
+    final members = [
+      group.adminId,
+      ...group.memberIds.where((id) => id != group.adminId),
+    ];
+    final missing = members
+        .where((id) => (group.memberNames[id] ?? '').isEmpty)
+        .length;
+    final scheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(title: Text('${group.name}・成員')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Card(
-            child: ListTile(
-              leading: const CircleAvatar(child: Icon(Icons.groups_outlined)),
-              title: const Text('球隊成員'),
-              subtitle: Text('${group.memberIds.length} 人'),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            child: ListTile(
-              leading: const CircleAvatar(
-                child: Icon(Icons.admin_panel_settings_outlined),
-              ),
-              title: Text(user.name.isEmpty ? '你' : user.name),
-              subtitle: const Text('管理員'),
-              trailing: const Chip(
-                label: Text('管理員'),
-                visualDensity: VisualDensity.compact,
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Card(
-            child: Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('目前球隊只記錄成員身分，尚未取得其他成員的個人暱稱，因此不在這裡顯示臨時或虛構的姓名。'),
+          ContentWidth(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                SectionCard(
+                  title: '球隊成員 ${members.length} 人',
+                  icon: Icons.groups_outlined,
+                  children: [
+                    for (final id in members)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          backgroundColor: scheme.primaryContainer,
+                          foregroundColor: scheme.onPrimaryContainer,
+                          child: Text(
+                            (group.memberNames[id] ?? '').isEmpty
+                                ? '?'
+                                : group.memberNames[id]!.characters.first,
+                          ),
+                        ),
+                        title: Text(
+                          (group.memberNames[id] ?? '').isEmpty
+                              ? '成員（尚未同步暱稱）'
+                              : group.memberNames[id]!,
+                        ),
+                        subtitle: id == user.id ? const Text('你') : null,
+                        trailing: id == group.adminId
+                            ? const Chip(
+                                label: Text('管理員'),
+                                visualDensity: VisualDensity.compact,
+                              )
+                            : null,
+                      ),
+                  ],
+                ),
+                if (missing > 0) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    '有 $missing 位成員是在暱稱功能上線前加入的，他們下次登入後就會顯示暱稱。',
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  ),
+                ],
+              ],
             ),
           ),
         ],

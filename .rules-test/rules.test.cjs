@@ -221,14 +221,40 @@ async function main() {
     });
     await assertFails(lateJoin.commit());
 
-    await assertSucceeds(setDoc(doc(alice, 'groups', 'group'), {
+    const groupDoc = (store) => doc(store, 'groups', 'group');
+    const newGroup = (extra = {}) => ({
       name: '球友團', description: '', adminId: 'alice', maxPlayersDefault: 10,
-      recurringEventSettings: null, memberIds: ['alice'],
+      recurringEventSettings: null, memberIds: ['alice'], memberNames: { alice: '自訂暱稱' }, ...extra,
+    });
+    // 建立球隊：成員暱稱表只能有自己，且等於自己的暱稱。
+    const { memberNames: _omitNames, ...groupWithoutNames } = newGroup();
+    await assertFails(setDoc(groupDoc(alice), groupWithoutNames));
+    await assertFails(setDoc(groupDoc(alice), newGroup({ memberNames: { alice: '假名' } })));
+    await assertSucceeds(setDoc(groupDoc(alice), newGroup()));
+    await assertFails(getDoc(groupDoc(guest)));
+    await assertFails(updateDoc(groupDoc(bob), { adminId: 'bob' }));
+    // 加入球隊：要同時寫入自己的暱稱；不能冒名或改別人的。
+    await assertFails(updateDoc(groupDoc(bob), { memberIds: ['alice', 'bob'] }));
+    await assertFails(updateDoc(groupDoc(bob), {
+      memberIds: ['alice', 'bob'], 'memberNames.bob': 'Alice',
     }));
-    await assertFails(getDoc(doc(guest, 'groups', 'group')));
-    await assertFails(updateDoc(doc(bob, 'groups', 'group'), { adminId: 'bob' }));
-    await assertSucceeds(updateDoc(doc(bob, 'groups', 'group'), { memberIds: ['alice', 'bob'] }));
-    await assertFails(updateDoc(doc(carol, 'groups', 'group'), { memberIds: ['carol'] }));
+    await assertFails(updateDoc(groupDoc(bob), {
+      memberIds: ['alice', 'bob'], 'memberNames.bob': 'Bobby', 'memberNames.alice': 'x',
+    }));
+    await assertSucceeds(updateDoc(groupDoc(bob), {
+      memberIds: ['alice', 'bob'], 'memberNames.bob': 'Bobby',
+    }));
+    await assertFails(updateDoc(groupDoc(carol), { memberIds: ['carol'] }));
+    // 成員同步自己的暱稱：只能改自己那格；非成員不行。
+    const renameBob = writeBatch(bob);
+    renameBob.update(doc(bob, 'users', 'bob'), { name: 'Bob 新名' });
+    renameBob.update(groupDoc(bob), { 'memberNames.bob': 'Bob 新名' });
+    await assertSucceeds(renameBob.commit());
+    await assertFails(updateDoc(groupDoc(bob), { 'memberNames.alice': '亂改' }));
+    await assertFails(updateDoc(groupDoc(carol), { 'memberNames.carol': 'Carol' }));
+    assert.deepEqual((await getDoc(groupDoc(alice))).data().memberNames, {
+      alice: '自訂暱稱', bob: 'Bob 新名',
+    });
     await assertFails(setDoc(doc(bob, 'events', 'foreign-group'), event({
       organizerId: 'bob', groupId: 'group',
     })));
@@ -284,8 +310,8 @@ async function main() {
       await batch.commit();
     };
     // 計數只加 1 但帶 2 位朋友 → 拒絕；正確加 3 → 成功（1 + 3 = 4 ≤ 5）。
-    await assertFails(joinGroup(bob, 'bob', 'Bobby', 'attending', 'attendeeCount', 1, 2));
-    await assertSucceeds(joinGroup(bob, 'bob', 'Bobby', 'attending', 'attendeeCount', 3, 2));
+    await assertFails(joinGroup(bob, 'bob', 'Bob 新名', 'attending', 'attendeeCount', 1, 2));
+    await assertSucceeds(joinGroup(bob, 'bob', 'Bob 新名', 'attending', 'attendeeCount', 3, 2));
     // 剩 1 位，carol 帶 1 位朋友（2 人）放不下 → 只能整組候補。
     await assertFails(joinGroup(carol, 'carol', 'Carol', 'attending', 'attendeeCount', 5, 1));
     await assertSucceeds(joinGroup(carol, 'carol', 'Carol', 'waitlisted', 'waitlistCount', 2, 1));

@@ -47,6 +47,7 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
           name: _nameController.text.trim(),
           description: _descriptionController.text.trim(),
           adminId: user.id,
+          adminName: user.name,
           maxPlayersDefault: int.parse(_maxPlayersController.text.trim()),
         ),
       );

@@ -12,6 +12,20 @@ service cloud.firestore {
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
     }
 
+    // 呼叫者自己的暱稱；用 getAfter 讓「改暱稱＋同步」能在同一批寫入完成。
+    function myName() {
+      return getAfter(/databases/$(database)/documents/users/$(request.auth.uid)).data.name;
+    }
+
+    // 球隊成員暱稱表只改到自己那一格，且必須等於自己的暱稱。
+    function onlyMyMemberName() {
+      let before = resource.data.get('memberNames', {});
+      let after = request.resource.data.memberNames;
+      return after is map
+        && after.diff(before).affectedKeys().hasOnly([request.auth.uid])
+        && after[request.auth.uid] == myName();
+    }
+
     function ownAccount(uid) {
       return googleUser() && request.auth.uid == uid;
     }
@@ -87,10 +101,11 @@ service cloud.firestore {
     match /groups/{groupId} {
       allow get, list: if googleUser();
       allow create: if googleUser()
-        && request.resource.data.keys().hasAll(['name', 'description', 'adminId', 'maxPlayersDefault', 'recurringEventSettings', 'memberIds'])
-        && request.resource.data.keys().hasOnly(['name', 'description', 'adminId', 'maxPlayersDefault', 'recurringEventSettings', 'memberIds'])
+        && request.resource.data.keys().hasAll(['name', 'description', 'adminId', 'maxPlayersDefault', 'recurringEventSettings', 'memberIds', 'memberNames'])
+        && request.resource.data.keys().hasOnly(['name', 'description', 'adminId', 'maxPlayersDefault', 'recurringEventSettings', 'memberIds', 'memberNames'])
         && request.resource.data.adminId == request.auth.uid
         && request.resource.data.memberIds == [request.auth.uid]
+        && request.resource.data.memberNames == {(request.auth.uid): myName()}
         && trimmedNonEmpty(request.resource.data.name)
         // Flutter limits grapheme clusters; the broader rules cap accommodates multi-scalar characters.
         && request.resource.data.name.size() <= 960
@@ -100,9 +115,17 @@ service cloud.firestore {
         && request.resource.data.maxPlayersDefault is int
         && request.resource.data.maxPlayersDefault >= 2;
       allow update: if googleUser()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds'])
-        && !(request.auth.uid in resource.data.memberIds)
-        && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid]);
+        && (
+          // 加入球隊：把自己加進成員，並一併寫入自己的暱稱。
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'memberNames'])
+            && !(request.auth.uid in resource.data.memberIds)
+            && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid])
+            && onlyMyMemberName()
+          // 已是成員：同步（或補上）自己的暱稱。
+          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberNames'])
+            && request.auth.uid in resource.data.memberIds
+            && onlyMyMemberName()
+        );
       allow delete: if false;
     }
 

@@ -103,6 +103,7 @@ class GroupRepository extends ChangeNotifier {
         maxPlayersDefault: group.maxPlayersDefault,
         recurringEventSettings: group.recurringEventSettings,
         memberIds: group.memberIds,
+        memberNames: group.memberNames,
       );
       await docRef.set(groupWithId.toMap());
     } catch (error) {
@@ -111,10 +112,12 @@ class GroupRepository extends ChangeNotifier {
     }
   }
 
-  Future<void> joinGroup(String groupId, String userId) async {
+  /// 加入球隊並寫入自己的暱稱；規則會檢查暱稱等於本人的暱稱。
+  Future<void> joinGroup(String groupId, String userId, String name) async {
     try {
       await _firestore.collection('groups').doc(groupId).update({
         'memberIds': FieldValue.arrayUnion([userId]),
+        'memberNames.$userId': name,
       });
     } catch (error) {
       debugPrint('Error joining group: $error');

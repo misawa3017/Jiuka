@@ -182,6 +182,30 @@ void main() {
     when(
       () => organizedQuery.get(),
     ).thenAnswer((_) async => result([staleEvent, syncedEvent]));
+    // 已加入的球隊：一隊暱稱過期、一隊沒有暱稱表（舊資料）、一隊已同步。
+    final groups = MockCollection();
+    final myGroupsQuery = MockQuery();
+    MockEntry groupDoc(Map<String, dynamic> data) {
+      final doc = MockEntry();
+      when(() => doc.data()).thenReturn(data);
+      when(() => doc.reference).thenReturn(MockDocument());
+      return doc;
+    }
+
+    final staleGroup = groupDoc({
+      'memberNames': {'google-user': 'Google Name'},
+    });
+    final legacyGroup = groupDoc({});
+    final syncedGroup = groupDoc({
+      'memberNames': {'google-user': '新暱稱'},
+    });
+    when(() => fixture.store.collection('groups')).thenReturn(groups);
+    when(
+      () => groups.where('memberIds', arrayContains: 'google-user'),
+    ).thenReturn(myGroupsQuery);
+    when(
+      () => myGroupsQuery.get(),
+    ).thenAnswer((_) async => result([staleGroup, legacyGroup, syncedGroup]));
     when(() => fixture.store.batch()).thenReturn(batch);
     final updates = <DocumentReference, Map<String, dynamic>>{};
     when(() => batch.update<Map<String, dynamic>>(any(), any())).thenAnswer((
@@ -209,6 +233,9 @@ void main() {
     expect(updates[legacy.reference], {'displayName': '新暱稱'});
     expect(updates.containsKey(synced.reference), isFalse);
     expect(updates[staleEvent.reference], {'organizerName': '新暱稱'});
+    expect(updates[staleGroup.reference], {'memberNames.google-user': '新暱稱'});
+    expect(updates[legacyGroup.reference], {'memberNames.google-user': '新暱稱'});
+    expect(updates.containsKey(syncedGroup.reference), isFalse);
     expect(updates.containsKey(syncedEvent.reference), isFalse);
     verify(() => batch.commit()).called(1);
     expect(fixture.repository.currentUser!.name, '新暱稱');

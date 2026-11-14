@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiuka/features/events/models/event_model.dart';
+import 'package:jiuka/features/groups/models/group_model.dart';
 
 void main() {
   Event event({
@@ -68,6 +69,23 @@ void main() {
     expect(legacy.sport, isNull);
     expect(legacy.updatedAt, isNull);
     expect(legacy.cancelledAt, isNull);
+  });
+
+  test('球隊成員暱稱：建立時寫入管理員暱稱，舊球隊沒有時為空', () {
+    final group = Group.create(
+      name: '球友團',
+      description: '',
+      adminId: 'a',
+      adminName: '小明',
+    );
+    expect(group.toMap()['memberNames'], {'a': '小明'});
+    final restored = Group.fromMap({
+      ...group.toMap(),
+      'memberIds': ['a', 'b'],
+      'memberNames': {'a': '小明', 'b': ' 小華 ', 'c': 123},
+    }, 'g');
+    expect(restored.memberNames, {'a': '小明', 'b': '小華'});
+    expect(Group.fromMap({'adminId': 'a'}, 'old').memberNames, isEmpty);
   });
 
   test('同行朋友：一組人數含本人，舊資料視為 0 位朋友', () {

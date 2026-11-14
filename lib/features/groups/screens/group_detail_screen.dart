@@ -140,9 +140,11 @@ class _JoinGroupButtonState extends State<_JoinGroupButton> {
     if (_isJoining) return;
     setState(() => _isJoining = true);
     try {
+      final name = context.read<AuthRepository>().currentUser?.name ?? '';
       await context.read<GroupRepository>().joinGroup(
         widget.groupId,
         widget.userId,
+        name,
       );
       if (mounted) {
         ScaffoldMessenger.of(

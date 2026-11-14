@@ -12,6 +12,14 @@ List<String> _memberIdsValue(Object? value, String adminId) {
   return memberIds;
 }
 
+Map<String, String> _memberNamesValue(Object? value) => value is Map
+    ? {
+        for (final entry in value.entries)
+          if (entry.key is String && entry.value is String)
+            entry.key as String: (entry.value as String).trim(),
+      }
+    : {};
+
 RecurringEventSettings? _recurringSettingsValue(Object? value) {
   if (value is! Map) return null;
   final dayOfWeek = value['dayOfWeek'];
@@ -36,6 +44,9 @@ class Group {
   final RecurringEventSettings? recurringEventSettings;
   final List<String> memberIds;
 
+  /// 成員暱稱（UID → 暱稱）。加入或改暱稱時由本人寫入；舊球隊可能缺少部分成員。
+  final Map<String, String> memberNames;
+
   Group({
     required this.id,
     required this.name,
@@ -44,6 +55,7 @@ class Group {
     this.maxPlayersDefault = 20,
     this.recurringEventSettings,
     this.memberIds = const [],
+    this.memberNames = const {},
   });
 
   Map<String, dynamic> toMap() {
@@ -54,6 +66,7 @@ class Group {
       'maxPlayersDefault': maxPlayersDefault,
       'recurringEventSettings': recurringEventSettings?.toMap(),
       'memberIds': memberIds,
+      'memberNames': memberNames,
     };
   }
 
@@ -70,6 +83,7 @@ class Group {
         map['recurringEventSettings'],
       ),
       memberIds: _memberIdsValue(map['memberIds'], adminId),
+      memberNames: _memberNamesValue(map['memberNames']),
     );
   }
 
@@ -77,6 +91,7 @@ class Group {
     required String name,
     required String description,
     required String adminId,
+    required String adminName,
     int maxPlayersDefault = 20,
     RecurringEventSettings? recurringEventSettings,
   }) {
@@ -88,6 +103,7 @@ class Group {
       maxPlayersDefault: maxPlayersDefault,
       recurringEventSettings: recurringEventSettings,
       memberIds: [adminId], // Admin is automatically a member
+      memberNames: {adminId: adminName},
     );
   }
 }
