@@ -75,4 +75,6 @@ npm run lint --prefix functions
 firebase emulators:exec --only firestore --project demo-jiuka-rules "node .rules-test/rules.test.cjs"
 ```
 
+規則測試需先執行 `npm ci --prefix .rules-test`；Firestore 模擬器需要 Java 21 以上。macOS 以 Homebrew 安裝 `openjdk@21` 後，須將 `/opt/homebrew/opt/openjdk@21/bin` 加入 PATH。
+
 真實 OAuth、collection-group 查詢索引、Callable Function 遞補與正式網域仍需在隔離的測試 Firebase 專案驗證；模擬器不能替代真實登入流程。
