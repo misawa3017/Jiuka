@@ -31,6 +31,17 @@ void main() {
     );
   });
 
+  test('未登入可看場次詳情，但編輯頁要先登入', () async {
+    final fixture = AuthFixture();
+    addTearDown(fixture.dispose);
+    await fixture.ready();
+    expect(authRedirect(fixture.repository, Uri.parse('/event/game')), isNull);
+    expect(
+      authRedirect(fixture.repository, Uri.parse('/event/game/edit')),
+      '/login?from=%2Fevent%2Fgame%2Fedit',
+    );
+  });
+
   testWidgets('從場次連結登入返回場次，登出後回登入頁', (tester) async {
     final fixture = AuthFixture();
     await tester.runAsync(fixture.ready);

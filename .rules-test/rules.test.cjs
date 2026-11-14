@@ -107,6 +107,30 @@ async function main() {
     await assertFails(deleteDoc(doc(alice, 'events', 'game', 'participants', 'bob')));
     await assertFails(deleteDoc(game(alice)));
 
+    // 取消場次：只有主揪、只能改狀態為已取消，編輯其他欄位必須走 Cloud Function。
+    const cancel = (store, extra = {}) => updateDoc(game(store), {
+      status: 2, cancelledAt: serverTimestamp(), ...extra,
+    });
+    await assertFails(updateDoc(game(alice), { cost: 800 }));
+    await assertFails(updateDoc(game(alice), { maxPlayers: 4 }));
+    await assertFails(cancel(bob));
+    await assertFails(cancel(guest));
+    await assertFails(cancel(alice, { cost: 0 }));
+    await assertFails(updateDoc(game(alice), { status: 2 }));
+    await assertFails(updateDoc(game(alice), { status: 2, cancelledAt: Timestamp.now() }));
+    await assertFails(updateDoc(game(alice), { status: 1, cancelledAt: serverTimestamp() }));
+    await assertSucceeds(cancel(alice));
+    assert.equal((await getDoc(game(guest))).data().status, 2);
+    // 取消後不能重新開放，也不能再報名。
+    await assertFails(updateDoc(game(alice), { status: 0 }));
+    const dave = google('dave');
+    const lateJoin = writeBatch(dave);
+    lateJoin.update(game(dave), { waitlistCount: 2 });
+    lateJoin.set(doc(dave, 'events', 'game', 'participants', 'dave'), {
+      eventId: 'game', userId: 'dave', status: 'waitlisted', joinedAt: serverTimestamp(),
+    });
+    await assertFails(lateJoin.commit());
+
     await assertSucceeds(setDoc(doc(alice, 'groups', 'group'), {
       name: '球友團', description: '', adminId: 'alice', maxPlayersDefault: 10,
       recurringEventSettings: null, memberIds: ['alice'],

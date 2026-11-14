@@ -1,3 +1,4 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
@@ -9,7 +10,11 @@ import '../repositories/event_repository.dart';
 
 class CreateEventScreen extends StatefulWidget {
   final String groupId;
-  const CreateEventScreen({super.key, this.groupId = ''});
+
+  /// 有值時為編輯模式：表單預填此場次，送出時呼叫 updateEvent。
+  final Event? initialEvent;
+
+  const CreateEventScreen({super.key, this.groupId = '', this.initialEvent});
 
   @override
   State<CreateEventScreen> createState() => _CreateEventScreenState();
@@ -31,6 +36,28 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   TimeOfDay _endTime = const TimeOfDay(hour: 22, minute: 0);
   bool _isCreating = false;
   String? _error;
+
+  bool get _isEditing => widget.initialEvent != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final event = widget.initialEvent;
+    if (event == null) return;
+    _districtController.text = event.district;
+    _venueController.text = event.venue;
+    _descriptionController.text = event.description;
+    _costController.text = '${event.cost}';
+    _maxPlayersController.text = '${event.maxPlayers}';
+    _friendsController.text =
+        '${event.existingPlayers - (event.organizerPlaying ? 1 : 0)}';
+    _sport = event.sport ?? SportType.basketball;
+    _costMode = event.costMode;
+    _organizerPlaying = event.organizerPlaying;
+    _selectedDate = DateUtils.dateOnly(event.startTime);
+    _startTime = TimeOfDay.fromDateTime(event.startTime);
+    _endTime = TimeOfDay.fromDateTime(event.endTime);
+  }
 
   @override
   void dispose() {
@@ -100,18 +127,43 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     final friends = int.parse(_friendsController.text);
     final maxPlayers = int.parse(_maxPlayersController.text);
     final existingPlayers = friends + (_organizerPlaying ? 1 : 0);
+    final attendees = widget.initialEvent?.attendeeCount ?? 0;
     if (!start.isAfter(DateTime.now()) ||
         !end.isAfter(start) ||
-        existingPlayers > maxPlayers) {
-      setState(() => _error = '請確認時間仍在未來，且已有人數沒有超過總名額。');
+        existingPlayers + attendees > maxPlayers) {
+      setState(
+        () => _error = attendees > 0
+            ? '請確認時間仍在未來；目前已有 $attendees 位正取球友，總名額至少要 ${existingPlayers + attendees} 人。'
+            : '請確認時間仍在未來，且已有人數沒有超過總名額。',
+      );
       return;
     }
     setState(() {
       _isCreating = true;
       _error = null;
     });
+    final repository = context.read<EventRepository>();
     try {
-      await context.read<EventRepository>().createEvent(
+      if (widget.initialEvent case final original?) {
+        await repository.updateEvent(
+          original.copyWith(
+            sport: _sport,
+            district: _districtController.text.trim(),
+            venue: _venueController.text.trim(),
+            description: _descriptionController.text.trim(),
+            existingPlayers: existingPlayers,
+            organizerPlaying: _organizerPlaying,
+            startTime: start,
+            endTime: end,
+            costMode: _costMode,
+            cost: int.parse(_costController.text),
+            maxPlayers: maxPlayers,
+          ),
+        );
+        if (mounted) context.pop();
+        return;
+      }
+      await repository.createEvent(
         Event(
           id: const Uuid().v4(),
           groupId: widget.groupId,
@@ -130,8 +182,17 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         ),
       );
       if (mounted) context.pop();
+    } on FirebaseFunctionsException catch (error) {
+      // 後端驗證失敗（例如名額低於正取人數）時，直接顯示伺服器的說明。
+      if (mounted) {
+        setState(() => _error = error.message ?? '儲存失敗，請確認連線後重試。');
+      }
     } catch (_) {
-      if (mounted) setState(() => _error = '發布失敗，請確認連線後重試。');
+      if (mounted) {
+        setState(
+          () => _error = _isEditing ? '儲存失敗，請確認連線後重試。' : '發布失敗，請確認連線後重試。',
+        );
+      }
     } finally {
       if (mounted) setState(() => _isCreating = false);
     }
@@ -142,13 +203,27 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     final friends = int.tryParse(_friendsController.text) ?? 0;
     final players = friends + (_organizerPlaying ? 1 : 0);
     final maxPlayers = int.tryParse(_maxPlayersController.text) ?? 0;
+    final original = widget.initialEvent;
+    final occupied = players + (original?.attendeeCount ?? 0);
     return Scaffold(
-      appBar: AppBar(title: const Text('發布缺人場次')),
+      appBar: AppBar(title: Text(_isEditing ? '編輯場次' : '發布缺人場次')),
       body: Form(
         key: _formKey,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (original != null &&
+                original.attendeeCount + original.waitlistCount > 0)
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    '已有 ${original.attendeeCount + original.waitlistCount} 位球友報名。'
+                    '目前沒有通知功能，修改時間、地點或費用後請自行告知他們；'
+                    '場次頁會顯示「主揪更新過場次資訊」。',
+                  ),
+                ),
+              ),
             DropdownButtonFormField<SportType>(
               initialValue: _sport,
               decoration: const InputDecoration(labelText: '運動類型'),
@@ -225,8 +300,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                   setState(() => _organizerPlaying = value ?? false),
             ),
             Text(
-              '已有人數：$players　尚缺：${(maxPlayers - players).clamp(0, maxPlayers)}',
+              '已有人數：$occupied　尚缺：${(maxPlayers - occupied).clamp(0, maxPlayers)}',
             ),
+            if (original != null && original.attendeeCount > 0)
+              Text('含 App 報名的正取球友 ${original.attendeeCount} 人'),
+            if (original != null && original.waitlistCount > 0)
+              const Text('名額增加時，候補球友會依報名順序自動遞補。'),
             DropdownButtonFormField<CostMode>(
               initialValue: _costMode,
               decoration: const InputDecoration(labelText: '費用方式'),
@@ -271,7 +350,11 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             const SizedBox(height: 24),
             FilledButton(
               onPressed: _isCreating ? null : _submit,
-              child: Text(_isCreating ? '發布中…' : '發布場次'),
+              child: Text(
+                _isEditing
+                    ? (_isCreating ? '儲存中…' : '儲存變更')
+                    : (_isCreating ? '發布中…' : '發布場次'),
+              ),
             ),
           ],
         ),

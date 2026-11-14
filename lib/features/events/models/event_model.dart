@@ -16,6 +16,12 @@ int _intValue(Object? value, int fallback) =>
 bool _boolValue(Object? value, bool fallback) =>
     value is bool ? value : fallback;
 
+DateTime? _optionalDateValue(Object? value) {
+  if (value is Timestamp) return value.toDate();
+  if (value is DateTime) return value;
+  return null;
+}
+
 DateTime _dateValue(Object? value) {
   if (value is Timestamp) return value.toDate();
   if (value is DateTime) return value;
@@ -69,6 +75,12 @@ class Event {
   final EventStatus status;
   final bool isRecurring;
 
+  /// 主揪最後一次編輯場次的時間；從未編輯為 null。只由後端寫入。
+  final DateTime? updatedAt;
+
+  /// 主揪取消場次的時間；未取消為 null。
+  final DateTime? cancelledAt;
+
   Event({
     required this.id,
     required this.groupId,
@@ -88,6 +100,8 @@ class Event {
     this.waitlistCount = 0,
     this.status = EventStatus.open,
     this.isRecurring = false,
+    this.updatedAt,
+    this.cancelledAt,
   });
 
   int get occupiedCount => existingPlayers + attendeeCount;
@@ -167,6 +181,8 @@ class Event {
           ? EventStatus.values[statusIndex]
           : EventStatus.cancelled,
       isRecurring: _boolValue(map['isRecurring'], false),
+      updatedAt: _optionalDateValue(map['updatedAt']),
+      cancelledAt: _optionalDateValue(map['cancelledAt']),
     );
   }
 
@@ -210,6 +226,8 @@ class Event {
       waitlistCount: waitlistCount ?? this.waitlistCount,
       status: status ?? this.status,
       isRecurring: isRecurring ?? this.isRecurring,
+      updatedAt: updatedAt,
+      cancelledAt: cancelledAt,
     );
   }
 }

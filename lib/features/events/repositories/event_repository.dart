@@ -9,16 +9,25 @@ class EventRepository extends ChangeNotifier {
   final FirebaseFirestore _firestore;
   final FirebaseFunctions? _functions;
   final Future<void> Function(String eventId)? _cancelParticipation;
+  final Future<void> Function(String eventId, Map<String, dynamic> event)?
+  _submitEventUpdate;
 
   EventRepository({
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     Future<void> Function(String eventId)? cancelParticipation,
+    Future<void> Function(String eventId, Map<String, dynamic> event)?
+    submitEventUpdate,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _functions = functions,
-       _cancelParticipation = cancelParticipation;
+       _cancelParticipation = cancelParticipation,
+       _submitEventUpdate = submitEventUpdate;
 
-  Future<void> createEvent(Event event) async {
+  FirebaseFunctions get _callables =>
+      _functions ?? FirebaseFunctions.instanceFor(region: 'asia-east1');
+
+  /// 發布與編輯共用的欄位檢查；伺服器端規則與 Cloud Function 會再驗證一次。
+  static void validateEvent(Event event) {
     if (event.organizerId.isEmpty ||
         event.sport == null ||
         event.district.trim().isEmpty ||
@@ -27,12 +36,50 @@ class EventRepository extends ChangeNotifier {
         !event.endTime.isAfter(event.startTime) ||
         event.maxPlayers < 2 ||
         event.existingPlayers < 0 ||
-        event.existingPlayers > event.maxPlayers ||
+        event.occupiedCount > event.maxPlayers ||
         (event.organizerPlaying && event.existingPlayers == 0) ||
         event.cost < 0) {
       throw ArgumentError('場次資料不完整或無效');
     }
+  }
+
+  Future<void> createEvent(Event event) async {
+    validateEvent(event);
     await _firestore.collection('events').doc(event.id).set(event.toMap());
+  }
+
+  /// 主揪編輯場次。由 Cloud Function 處理，名額變多時會依序遞補候補。
+  Future<void> updateEvent(Event event) async {
+    validateEvent(event);
+    final payload = {
+      'sport': event.sport!.name,
+      'district': event.district.trim(),
+      'venue': event.venue.trim(),
+      'description': event.description.trim(),
+      'startTime': event.startTime.millisecondsSinceEpoch,
+      'endTime': event.endTime.millisecondsSinceEpoch,
+      'cost': event.cost,
+      'costMode': event.costMode.name,
+      'organizerPlaying': event.organizerPlaying,
+      'existingPlayers': event.existingPlayers,
+      'maxPlayers': event.maxPlayers,
+    };
+    if (_submitEventUpdate case final submit?) {
+      await submit(event.id, payload);
+      return;
+    }
+    await _callables.httpsCallable('updateEvent').call({
+      'eventId': event.id,
+      'event': payload,
+    });
+  }
+
+  /// 主揪在開始前取消整場；規則只允許改狀態與取消時間。
+  Future<void> cancelEvent(String eventId) async {
+    await _firestore.collection('events').doc(eventId).update({
+      'status': EventStatus.cancelled.index,
+      'cancelledAt': FieldValue.serverTimestamp(),
+    });
   }
 
   Stream<List<Event>> searchUpcomingEvents({
@@ -203,8 +250,6 @@ class EventRepository extends ChangeNotifier {
       await cancel(eventId);
       return;
     }
-    final functions =
-        _functions ?? FirebaseFunctions.instanceFor(region: 'asia-east1');
-    await functions.httpsCallable('leaveEvent').call({'eventId': eventId});
+    await _callables.httpsCallable('leaveEvent').call({'eventId': eventId});
   }
 }

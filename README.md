@@ -72,6 +72,7 @@ npm ci --prefix functions
 flutter analyze
 flutter test
 npm run lint --prefix functions
+npm test --prefix functions
 firebase emulators:exec --only firestore --project demo-jiuka-rules "node .rules-test/rules.test.cjs"
 ```
 

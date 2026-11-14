@@ -8,6 +8,7 @@ import '../../features/groups/screens/create_group_screen.dart';
 import '../../features/groups/screens/group_detail_screen.dart';
 import '../../features/groups/screens/member_management_screen.dart';
 import '../../features/events/screens/create_event_screen.dart';
+import '../../features/events/screens/edit_event_screen.dart';
 import '../../features/events/screens/event_detail_screen.dart';
 import '../../features/events/screens/my_events_screen.dart';
 import '../../features/profile/screens/user_profile_screen.dart';
@@ -61,6 +62,12 @@ GoRouter createAppRouter(AuthRepository auth) => GoRouter(
           EventDetailScreen(eventId: state.pathParameters['id']!),
     ),
     GoRoute(
+      path: '/event/:id/edit',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) =>
+          EditEventScreen(eventId: state.pathParameters['id']!),
+    ),
+    GoRoute(
       path: '/profile',
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) => const UserProfileScreen(),
@@ -68,9 +75,12 @@ GoRouter createAppRouter(AuthRepository auth) => GoRouter(
   ],
 );
 
+final _eventDetailPath = RegExp(r'^/event/[^/]+$');
+
 String? authRedirect(AuthRepository auth, Uri uri) {
   final atLogin = uri.path == '/login';
-  final publicPage = uri.path == '/' || uri.path.startsWith('/event/');
+  // 只有首頁與場次詳情（/event/:id）開放未登入瀏覽；編輯等子頁面需要登入。
+  final publicPage = uri.path == '/' || _eventDetailPath.hasMatch(uri.path);
   if (!auth.isAuthenticated && !publicPage) {
     return atLogin
         ? null

@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiuka/features/events/models/event_model.dart';
 
@@ -64,5 +65,20 @@ void main() {
     expect(legacy.costMode, CostMode.perPerson);
     expect(legacy.existingPlayers, 0);
     expect(legacy.sport, isNull);
+    expect(legacy.updatedAt, isNull);
+    expect(legacy.cancelledAt, isNull);
+  });
+
+  test('讀取編輯與取消時間，但發布時不寫入這兩個欄位', () {
+    final edited = DateTime(2026, 12, 1, 10, 30);
+    final map = event().toMap()
+      ..['updatedAt'] = Timestamp.fromDate(edited)
+      ..['cancelledAt'] = Timestamp.fromDate(edited);
+    final restored = Event.fromMap(map, 'event-1');
+    expect(restored.updatedAt, edited);
+    expect(restored.cancelledAt, edited);
+    expect(restored.copyWith(venue: '新球館').updatedAt, edited);
+    expect(event().toMap().containsKey('updatedAt'), isFalse);
+    expect(event().toMap().containsKey('cancelledAt'), isFalse);
   });
 }

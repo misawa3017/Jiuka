@@ -6,7 +6,8 @@
     "node": "22"
   },
   "scripts": {
-    "lint": "node --check index.js && node --check migrate_event_rosters.js"
+    "lint": "node --check index.js && node --check event_update.js && node --check migrate_event_rosters.js",
+    "test": "node --test event_update.test.js"
   },
   "dependencies": {
     "firebase-admin": "13.10.0",

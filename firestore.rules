@@ -118,12 +118,14 @@ service cloud.firestore {
         && request.resource.data.waitlistCount == 0
         && request.resource.data.status == 0
         && request.resource.data.isRecurring == false;
+      // 編輯場次經由 Cloud Function updateEvent（需在後端遞補候補），不開放前端直接寫入。
       allow update: if googleUser()
         && eventOpen()
-        && notOrganizerPlaying()
-        && !exists(participantPath(request.auth.uid))
         && (
-          joinAttendee() || joinWaitlisted()
+          notOrganizerPlaying()
+            && !exists(participantPath(request.auth.uid))
+            && (joinAttendee() || joinWaitlisted())
+          || organizerCancel()
         );
       allow delete: if false;
       match /participants/{participantId} {
@@ -194,6 +196,14 @@ service cloud.firestore {
               && after.attendeeCount == event.attendeeCount
               && after.waitlistCount == event.waitlistCount + 1
           );
+      }
+
+      // 主揪在開始前取消整場：只能把狀態改成已取消（2），並記錄伺服器時間。
+      function organizerCancel() {
+        return resource.data.organizerId == request.auth.uid
+          && onlyCounter(['status', 'cancelledAt'])
+          && request.resource.data.status == 2
+          && request.resource.data.cancelledAt == request.time;
       }
 
       function joinAttendee() {

@@ -200,7 +200,23 @@ class _EventDetails extends StatelessWidget {
               '${event.organizerPlaying ? '（含主揪）' : ''}',
             ),
           if (event.waitlistCount > 0) Text('目前候補 ${event.waitlistCount} 人'),
-          if (event.status != EventStatus.open || !canJoin)
+          if (event.updatedAt case final updatedAt?)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                '主揪於 ${DateFormat('MM/dd HH:mm').format(updatedAt)} 更新過場次資訊',
+                style: TextStyle(color: Theme.of(context).colorScheme.primary),
+              ),
+            ),
+          if (event.status == EventStatus.cancelled)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Text(
+                '主揪已取消此場次',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            )
+          else if (!canJoin)
             const Padding(
               padding: EdgeInsets.only(top: 16),
               child: Text('此場次已不開放報名'),
@@ -265,7 +281,12 @@ class _EventDetails extends StatelessWidget {
                 child: Text(event.isFull ? '加入候補' : '我要報名'),
               ),
           const SizedBox(height: 24),
+          if (userId == event.organizerId && canJoin) ...[
+            const SizedBox(height: 16),
+            _OrganizerActions(event: event, repository: repository),
+          ],
           if (userId == event.organizerId) ...[
+            const SizedBox(height: 16),
             Text('正取與候補名單', style: Theme.of(context).textTheme.titleMedium),
             _OrganizerRoster(
               stream: repository.getParticipantsStream(event.id),
@@ -275,6 +296,75 @@ class _EventDetails extends StatelessWidget {
           if (kIsWeb) ...[const SizedBox(height: 24), const AdBannerWidget()],
         ],
       ),
+    );
+  }
+}
+
+class _OrganizerActions extends StatelessWidget {
+  final Event event;
+  final EventRepository repository;
+
+  const _OrganizerActions({required this.event, required this.repository});
+
+  Future<void> _cancel(BuildContext context) async {
+    final signedUp = event.attendeeCount + event.waitlistCount;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('取消整個場次？'),
+        content: Text(
+          signedUp > 0
+              ? '已有 $signedUp 位球友報名或候補。取消後無法復原，'
+                    '目前沒有通知功能，請自行告知他們。'
+              : '取消後無法復原，場次將不再接受報名。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('返回'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('確認取消場次'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await repository.cancelEvent(event.id);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('取消場次失敗，請稍後重試。')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: OutlinedButton.icon(
+            icon: const Icon(Icons.edit),
+            label: const Text('編輯場次'),
+            onPressed: () => context.push('/event/${event.id}/edit'),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: TextButton.icon(
+            icon: const Icon(Icons.event_busy),
+            label: const Text('取消場次'),
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => _cancel(context),
+          ),
+        ),
+      ],
     );
   }
 }
