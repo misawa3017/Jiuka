@@ -278,6 +278,11 @@ class _EventDetails extends StatelessWidget {
                           icon: Icons.place_outlined,
                           text: event.district,
                         ),
+                        if (event.organizerName.isNotEmpty)
+                          _InfoRow(
+                            icon: Icons.person_outline,
+                            text: '主揪 ${event.organizerName}',
+                          ),
                       ],
                     ),
                   ),

@@ -166,6 +166,22 @@ void main() {
     when(() => query.get()).thenAnswer(
       (_) async => call++ == 0 ? result([stale, synced]) : result([legacy]),
     );
+    // 自己發布的場次：一場暱稱過期要更新，一場已是新暱稱不重寫。
+    final events = MockCollection();
+    final organizedQuery = MockQuery();
+    final staleEvent = MockEntry();
+    when(() => staleEvent.data()).thenReturn({'organizerName': 'Google Name'});
+    when(() => staleEvent.reference).thenReturn(MockDocument());
+    final syncedEvent = MockEntry();
+    when(() => syncedEvent.data()).thenReturn({'organizerName': '新暱稱'});
+    when(() => syncedEvent.reference).thenReturn(MockDocument());
+    when(() => fixture.store.collection('events')).thenReturn(events);
+    when(
+      () => events.where('organizerId', isEqualTo: 'google-user'),
+    ).thenReturn(organizedQuery);
+    when(
+      () => organizedQuery.get(),
+    ).thenAnswer((_) async => result([staleEvent, syncedEvent]));
     when(() => fixture.store.batch()).thenReturn(batch);
     final updates = <DocumentReference, Map<String, dynamic>>{};
     when(() => batch.update<Map<String, dynamic>>(any(), any())).thenAnswer((
@@ -192,6 +208,8 @@ void main() {
     expect(updates[stale.reference], {'displayName': '新暱稱'});
     expect(updates[legacy.reference], {'displayName': '新暱稱'});
     expect(updates.containsKey(synced.reference), isFalse);
+    expect(updates[staleEvent.reference], {'organizerName': '新暱稱'});
+    expect(updates.containsKey(syncedEvent.reference), isFalse);
     verify(() => batch.commit()).called(1);
     expect(fixture.repository.currentUser!.name, '新暱稱');
   });

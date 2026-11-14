@@ -30,10 +30,12 @@ exports.updateEvent = onCall(async (request) => {
 
   const eventRef = db.collection('events').doc(eventId);
   const organizerEntryRef = eventRef.collection('participants').doc(uid);
+  const organizerRef = db.collection('users').doc(uid);
   return db.runTransaction(async (transaction) => {
-    const [eventSnapshot, organizerEntry] = await Promise.all([
+    const [eventSnapshot, organizerEntry, organizerProfile] = await Promise.all([
       transaction.get(eventRef),
       transaction.get(organizerEntryRef),
+      transaction.get(organizerRef),
     ]);
     if (!eventSnapshot.exists) {
       throw new HttpsError('not-found', '找不到場次。');
@@ -86,6 +88,10 @@ exports.updateEvent = onCall(async (request) => {
     }
     transaction.update(eventRef, {
       ...plan.fields,
+      // 順便補上或更新主揪暱稱（舊場次沒有這個欄位）。
+      ...(typeof organizerProfile.data()?.name === 'string'
+        ? { organizerName: organizerProfile.data().name }
+        : {}),
       startTime: Timestamp.fromDate(plan.startTime),
       endTime: Timestamp.fromDate(plan.endTime),
       attendeeCount: (event.attendeeCount ?? 0) + promoted.length,

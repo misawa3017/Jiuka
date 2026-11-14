@@ -70,6 +70,14 @@ void main() {
     expect(legacy.cancelledAt, isNull);
   });
 
+  test('主揪暱稱可往返，舊場次沒有時為空字串', () {
+    final game = event().copyWith(organizerName: '小明');
+    expect(game.toMap()['organizerName'], '小明');
+    expect(Event.fromMap(game.toMap(), 'e').organizerName, '小明');
+    final legacy = event().toMap()..remove('organizerName');
+    expect(Event.fromMap(legacy, 'old').organizerName, '');
+  });
+
   test('活動名稱可往返；沒填或舊場次以球館名稱當標題', () {
     final named = event().copyWith(title: '週三晚間籃球');
     expect(named.toMap()['title'], '週三晚間籃球');

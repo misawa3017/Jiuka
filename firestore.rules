@@ -80,18 +80,20 @@ service cloud.firestore {
       allow get, list: if true;
       allow create: if googleUser()
         && request.resource.data.keys().hasAll([
-          'groupId', 'organizerId', 'title', 'sport', 'city', 'district', 'description',
+          'groupId', 'organizerId', 'organizerName', 'title', 'sport', 'city', 'district', 'description',
           'existingPlayers', 'startTime', 'endTime', 'venue', 'cost',
           'costMode', 'organizerPlaying', 'maxPlayers', 'attendeeCount',
           'waitlistCount', 'status', 'isRecurring'
         ])
         && request.resource.data.keys().hasOnly([
-          'groupId', 'organizerId', 'title', 'sport', 'city', 'district', 'description',
+          'groupId', 'organizerId', 'organizerName', 'title', 'sport', 'city', 'district', 'description',
           'existingPlayers', 'startTime', 'endTime', 'venue', 'cost',
           'costMode', 'organizerPlaying', 'maxPlayers', 'attendeeCount',
           'waitlistCount', 'status', 'isRecurring'
         ])
         && request.resource.data.organizerId == request.auth.uid
+        // 主揪暱稱公開顯示在場次上，必須等於主揪自己的暱稱，避免冒名。
+        && request.resource.data.organizerName == ownName()
         && request.resource.data.groupId is string
         && (request.resource.data.groupId == '' || (
           exists(/databases/$(database)/documents/groups/$(request.resource.data.groupId))
@@ -126,12 +128,16 @@ service cloud.firestore {
         && request.resource.data.isRecurring == false;
       // 編輯場次經由 Cloud Function updateEvent（需在後端遞補候補），不開放前端直接寫入。
       allow update: if googleUser()
-        && eventOpen()
         && (
-          notOrganizerPlaying()
-            && !exists(participantPath(request.auth.uid))
-            && (joinAttendee() || joinWaitlisted())
-          || organizerCancel()
+          eventOpen()
+            && (
+              notOrganizerPlaying()
+                && !exists(participantPath(request.auth.uid))
+                && (joinAttendee() || joinWaitlisted())
+              || organizerCancel()
+            )
+          // 改暱稱時同步自己發布過的場次（含已結束、已取消），所以不要求場次仍開放。
+          || organizerRename()
         );
       allow delete: if false;
       match /participants/{participantId} {
@@ -221,6 +227,12 @@ service cloud.firestore {
           && onlyCounter(['status', 'cancelledAt'])
           && request.resource.data.status == 2
           && request.resource.data.cancelledAt == request.time;
+      }
+
+      function organizerRename() {
+        return resource.data.organizerId == request.auth.uid
+          && onlyCounter(['organizerName'])
+          && request.resource.data.organizerName == ownName();
       }
 
       function joinAttendee() {

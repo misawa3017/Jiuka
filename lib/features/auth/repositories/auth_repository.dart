@@ -194,11 +194,12 @@ class AuthRepository extends ChangeNotifier {
     _notify();
   }
 
-  /// 更新暱稱，並同步到自己所有報名資料上的 displayName，讓主揪名單顯示新暱稱。
+  /// 更新暱稱，並同步到自己所有報名資料的 displayName 與自己發布場次的 organizerName。
   Future<void> updateUser(User updatedUser) async {
     if (updatedUser.id != _currentUser?.id) throw StateError('Not signed in');
     final name = updatedUser.name;
-    final stale = <DocumentReference<Map<String, dynamic>>>[];
+    // 需要更新的文件與要寫入的欄位：報名資料寫 displayName，場次寫 organizerName。
+    final stale = <(DocumentReference<Map<String, dynamic>>, String)>[];
     // 與「我的場次」相同的查詢形狀，沿用既有的 collection-group 索引。
     for (final status in ['attending', 'waitlisted']) {
       final snapshot = await _firestore
@@ -208,7 +209,20 @@ class AuthRepository extends ChangeNotifier {
           .orderBy('joinedAt')
           .get();
       for (final entry in snapshot.docs) {
-        if (entry.data()['displayName'] != name) stale.add(entry.reference);
+        if (entry.data()['displayName'] != name) {
+          stale.add((entry.reference, 'displayName'));
+        }
+      }
+    }
+
+    // 自己發布過的場次上也有公開的主揪暱稱，一併同步。
+    final organized = await _firestore
+        .collection('events')
+        .where('organizerId', isEqualTo: updatedUser.id)
+        .get();
+    for (final event in organized.docs) {
+      if (event.data()['organizerName'] != name) {
+        stale.add((event.reference, 'organizerName'));
       }
     }
 
@@ -218,13 +232,13 @@ class AuthRepository extends ChangeNotifier {
         'name': name,
       });
     var writes = 1;
-    for (final reference in stale) {
+    for (final (reference, field) in stale) {
       if (writes == 500) {
         await batch.commit();
         batch = _firestore.batch();
         writes = 0;
       }
-      batch.update(reference, {'displayName': name});
+      batch.update(reference, {field: name});
       writes++;
     }
     await batch.commit();

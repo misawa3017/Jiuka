@@ -64,6 +64,9 @@ class Event {
   final String id;
   final String groupId;
   final String organizerId;
+
+  /// 主揪暱稱，公開顯示在場次上；舊場次沒有時為空字串。
+  final String organizerName;
   final SportType? sport;
 
   /// 主揪自訂的活動名稱（選填，最多 [maxTitleLength] 字）；空字串時畫面以球館名稱當標題。
@@ -101,6 +104,7 @@ class Event {
     required this.id,
     required this.groupId,
     this.organizerId = '',
+    this.organizerName = '',
     this.sport,
     this.title = '',
     this.city = '',
@@ -143,6 +147,7 @@ class Event {
     return {
       'groupId': groupId,
       'organizerId': organizerId,
+      'organizerName': organizerName,
       'title': title,
       'sport': sport?.name,
       'city': city,
@@ -174,6 +179,7 @@ class Event {
       id: id,
       groupId: _stringValue(map['groupId']),
       organizerId: _stringValue(map['organizerId']),
+      organizerName: _stringValue(map['organizerName']).trim(),
       sport: SportType.values
           .where((sport) => sport.name == map['sport'])
           .firstOrNull,
@@ -219,6 +225,7 @@ class Event {
     String? id,
     String? groupId,
     String? organizerId,
+    String? organizerName,
     SportType? sport,
     String? title,
     String? city,
@@ -241,6 +248,7 @@ class Event {
       id: id ?? this.id,
       groupId: groupId ?? this.groupId,
       organizerId: organizerId ?? this.organizerId,
+      organizerName: organizerName ?? this.organizerName,
       sport: sport ?? this.sport,
       title: title ?? this.title,
       city: city ?? this.city,

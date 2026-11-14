@@ -179,6 +179,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           id: const Uuid().v4(),
           groupId: widget.groupId,
           organizerId: organizer.id,
+          organizerName: organizer.name,
           title: _titleController.text.trim(),
           sport: _sport,
           city: _city!,

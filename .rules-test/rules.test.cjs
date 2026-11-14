@@ -26,7 +26,7 @@ const rules = fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'ut
 const future = Timestamp.fromDate(new Date(Date.now() + 86_400_000));
 const later = Timestamp.fromDate(new Date(Date.now() + 90_000_000));
 const event = (overrides = {}) => ({
-  groupId: '', organizerId: 'alice', title: '週三晚間籃球', sport: 'basketball',
+  groupId: '', organizerId: 'alice', organizerName: '自訂暱稱', title: '週三晚間籃球', sport: 'basketball',
   city: '臺北市', district: '臺北市大安區', description: '', existingPlayers: 1,
   startTime: future, endTime: later, venue: '體育館', cost: 600,
   costMode: 'totalVenue', organizerPlaying: true, maxPlayers: 2,
@@ -77,6 +77,10 @@ async function main() {
     await assertFails(setDoc(game(alice), event({ city: '' })));
     await assertFails(setDoc(game(alice), event({ district: '新北市板橋區' })));
     await assertFails(setDoc(game(alice), event({ district: '臺北市' })));
+    // 主揪暱稱：必須等於主揪自己的暱稱，不能省略或冒名。
+    const { organizerName: _omitName, ...withoutName } = event();
+    await assertFails(setDoc(game(alice), withoutName));
+    await assertFails(setDoc(game(alice), event({ organizerName: 'Bob' })));
     // 活動名稱：選填（可空字串），最多 40 字，不能前後空白，也不能省略欄位。
     const { title: _omitTitle, ...withoutTitle } = event();
     await assertFails(setDoc(game(alice), withoutTitle));
@@ -176,6 +180,16 @@ async function main() {
       organizerId: 'bob', groupId: 'group',
     })));
     await assertSucceeds(setDoc(doc(alice, 'events', 'own-group'), event({ groupId: 'group' })));
+
+    // 主揪改暱稱：同一批寫入同步自己的場次，包含已取消的 game；不能改別人的或亂填。
+    const renameOrganizer = writeBatch(alice);
+    renameOrganizer.update(doc(alice, 'users', 'alice'), { name: 'Alice 主揪' });
+    renameOrganizer.update(game(alice), { organizerName: 'Alice 主揪' });
+    await assertSucceeds(renameOrganizer.commit());
+    assert.equal((await getDoc(game(guest))).data().organizerName, 'Alice 主揪');
+    await assertFails(updateDoc(game(alice), { organizerName: '假主揪' }));
+    await assertFails(updateDoc(game(bob), { organizerName: 'Bobby' }));
+    await assertFails(updateDoc(game(alice), { organizerName: 'Alice 主揪', status: 0 }));
     console.log('Firestore rules: all allow/deny cases passed');
   } finally {
     await env.cleanup();
