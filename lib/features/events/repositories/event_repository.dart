@@ -283,11 +283,17 @@ class EventRepository extends ChangeNotifier {
   }
 
   /// [displayName] 必須是使用者目前的暱稱，Firestore 規則會比對。
+  /// [guests] 是同行朋友人數（0～3），整組一起進正取或候補。
   Future<void> joinEvent(
     String eventId,
     String userId,
-    String displayName,
-  ) async {
+    String displayName, {
+    int guests = 0,
+  }) async {
+    if (guests < 0 || guests > EventParticipant.maxGuests) {
+      throw ArgumentError('同行朋友最多 ${EventParticipant.maxGuests} 人');
+    }
+    final party = 1 + guests;
     final eventRef = _firestore.collection('events').doc(eventId);
     final participantRef = eventRef.collection('participants').doc(userId);
     await _firestore.runTransaction<void>((transaction) async {
@@ -302,11 +308,11 @@ class EventRepository extends ChangeNotifier {
         return;
       }
       if (participant.exists) return;
-      final isWaitlisted = event.isFull;
+      final isWaitlisted = !event.fitsParty(party);
       transaction.update(eventRef, {
         isWaitlisted ? 'waitlistCount' : 'attendeeCount': isWaitlisted
-            ? event.waitlistCount + 1
-            : event.attendeeCount + 1,
+            ? event.waitlistCount + party
+            : event.attendeeCount + party,
       });
       transaction.set(participantRef, {
         'eventId': eventId,
@@ -314,6 +320,7 @@ class EventRepository extends ChangeNotifier {
         'status': isWaitlisted ? 'waitlisted' : 'attending',
         'joinedAt': FieldValue.serverTimestamp(),
         'displayName': displayName,
+        'guests': guests,
       });
     });
   }

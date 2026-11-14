@@ -181,8 +181,12 @@ service cloud.firestore {
         allow list: if googleUser() && (eventOrganizer(request.auth.uid) || isAdmin());
         allow create: if googleUser()
           && request.auth.uid == participantId
-          && request.resource.data.keys().hasAll(['eventId', 'userId', 'status', 'joinedAt', 'displayName'])
-          && request.resource.data.keys().hasOnly(['eventId', 'userId', 'status', 'joinedAt', 'displayName'])
+          && request.resource.data.keys().hasAll(['eventId', 'userId', 'status', 'joinedAt', 'displayName', 'guests'])
+          && request.resource.data.keys().hasOnly(['eventId', 'userId', 'status', 'joinedAt', 'displayName', 'guests'])
+          // 同行朋友 0～3 人，與本人一起占名額。
+          && request.resource.data.guests is int
+          && request.resource.data.guests >= 0
+          && request.resource.data.guests <= 3
           && request.resource.data.eventId == eventId
           && request.resource.data.userId == request.auth.uid
           && request.resource.data.joinedAt == request.time
@@ -241,9 +245,11 @@ service cloud.firestore {
         return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
       }
 
+      // 一組人數 = 本人 + 同行朋友。有人候補時新報名一律排候補（嚴格先到先得）。
       function eventHasJoined(uid, status) {
         let event = get(eventPath()).data;
         let after = getAfter(eventPath()).data;
+        let party = 1 + request.resource.data.guests;
         return event.status == 0
           && event.startTime is timestamp
           && event.endTime is timestamp
@@ -253,13 +259,15 @@ service cloud.firestore {
           && !exists(participantPath(uid))
           && (
             status == 'attending'
-              && event.existingPlayers + event.attendeeCount < event.maxPlayers
-              && after.attendeeCount == event.attendeeCount + 1
+              && event.waitlistCount == 0
+              && event.existingPlayers + event.attendeeCount + party <= event.maxPlayers
+              && after.attendeeCount == event.attendeeCount + party
               && after.waitlistCount == event.waitlistCount
             || status == 'waitlisted'
-              && event.existingPlayers + event.attendeeCount >= event.maxPlayers
+              && (event.waitlistCount > 0
+                || event.existingPlayers + event.attendeeCount + party > event.maxPlayers)
               && after.attendeeCount == event.attendeeCount
-              && after.waitlistCount == event.waitlistCount + 1
+              && after.waitlistCount == event.waitlistCount + party
           );
       }
 
@@ -289,13 +297,15 @@ service cloud.firestore {
 
       function joinAttendee() {
         return onlyCounter(['attendeeCount'])
-          && request.resource.data.attendeeCount == resource.data.attendeeCount + 1
+          && request.resource.data.attendeeCount == resource.data.attendeeCount
+            + 1 + getAfter(participantPath(request.auth.uid)).data.guests
           && getAfter(participantPath(request.auth.uid)).data.status == 'attending';
       }
 
       function joinWaitlisted() {
         return onlyCounter(['waitlistCount'])
-          && request.resource.data.waitlistCount == resource.data.waitlistCount + 1
+          && request.resource.data.waitlistCount == resource.data.waitlistCount
+            + 1 + getAfter(participantPath(request.auth.uid)).data.guests
           && getAfter(participantPath(request.auth.uid)).data.status == 'waitlisted';
       }
     }

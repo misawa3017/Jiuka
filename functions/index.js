@@ -9,7 +9,13 @@ const { getMessaging } = require('firebase-admin/messaging');
 const { setGlobalOptions, logger } = require('firebase-functions/v2');
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { HttpsError, onCall } = require('firebase-functions/v2/https');
-const { planEventUpdate, isPastCancelDeadline, EventUpdateError } = require('./event_update');
+const {
+  planEventUpdate,
+  isPastCancelDeadline,
+  pickPromotions,
+  partySize,
+  EventUpdateError,
+} = require('./event_update');
 const {
   participantChangeNotice,
   eventChangeNotice,
@@ -107,6 +113,37 @@ function requireOpen(event, message) {
 }
 
 /**
+ * 讀取候補名單（依報名順序）並挑出這次要遞補的組別。只做讀取，寫入由呼叫端處理，
+ * 因為 transaction 必須先讀完再寫。
+ */
+async function readPromotions(transaction, eventRef, openSpots, excludeId) {
+  if (openSpots <= 0) return { docs: [], people: 0 };
+  const queue = await transaction.get(
+    eventRef
+      .collection('participants')
+      .where('status', '==', 'waitlisted')
+      .orderBy('joinedAt', 'asc')
+      .orderBy(FieldPath.documentId(), 'asc')
+      .limit(50),
+  );
+  const entries = queue.docs.filter((doc) => doc.id !== excludeId);
+  const { ids, people } = pickPromotions(
+    entries.map((doc) => ({ id: doc.id, party: partySize(doc.data()) })),
+    openSpots,
+  );
+  return { docs: entries.filter((doc) => ids.includes(doc.id)), people };
+}
+
+function writePromotions(transaction, docs) {
+  for (const doc of docs) {
+    transaction.update(doc.ref, {
+      status: 'attending',
+      promotedAt: FieldValue.serverTimestamp(),
+    });
+  }
+}
+
+/**
  * 把 uid 從場次名單移除；若移除的是正取且有候補，依報名順序遞補第一位。
  * 退出報名（本人）與管理者移除共用。
  */
@@ -135,54 +172,45 @@ async function removeFromEvent(
     const participant = participantSnapshot.data();
     requireOpen(event, closedMessage);
 
+    // 人數以「組」計：本人＋同行朋友。
+    const party = partySize(participant);
+    let attendeeCount = event.attendeeCount ?? 0;
+    let waitlistCount = event.waitlistCount ?? 0;
     if (participant.status === 'waitlisted') {
-      if (event.waitlistCount < 1) {
-        throw new HttpsError('failed-precondition', '候補人數資料不一致。');
+      waitlistCount -= party;
+    } else if (participant.status === 'attending') {
+      // 球友自行取消時檢查主揪設定的期限；主揪或管理者移除不受限。
+      if (enforceDeadline && isPastCancelDeadline(event, new Date())) {
+        throw new HttpsError(
+          'failed-precondition',
+          `已超過取消期限（開始前 ${event.cancelDeadlineHours} 小時），請聯絡主揪。`,
+        );
       }
-      transaction.delete(participantRef);
-      transaction.update(eventRef, { waitlistCount: event.waitlistCount - 1 });
-      return { left: true, status: 'waitlisted' };
-    }
-    if (participant.status !== 'attending') {
+      attendeeCount -= party;
+    } else {
       throw new HttpsError('failed-precondition', '報名狀態無效。');
     }
-    // 球友自行取消時檢查主揪設定的期限；主揪或管理者移除不受限。
-    if (enforceDeadline && isPastCancelDeadline(event, new Date())) {
-      throw new HttpsError(
-        'failed-precondition',
-        `已超過取消期限（開始前 ${event.cancelDeadlineHours} 小時），請聯絡主揪。`,
-      );
+    if (attendeeCount < 0 || waitlistCount < 0) {
+      throw new HttpsError('failed-precondition', '報名人數資料不一致。');
     }
 
-    if (event.waitlistCount > 0) {
-      const queue = eventRef
-        .collection('participants')
-        .where('status', '==', 'waitlisted')
-        .orderBy('joinedAt', 'asc')
-        .orderBy(FieldPath.documentId(), 'asc')
-        .limit(1);
-      const waitlistSnapshot = await transaction.get(queue);
-      if (waitlistSnapshot.empty) {
-        throw new HttpsError('failed-precondition', '候補名單與人數不一致。');
-      }
-      const nextParticipant = waitlistSnapshot.docs[0];
-      transaction.delete(participantRef);
-      transaction.update(nextParticipant.ref, {
-        status: 'attending',
-        promotedAt: FieldValue.serverTimestamp(),
-      });
-      transaction.update(eventRef, {
-        waitlistCount: event.waitlistCount - 1,
-      });
-      return { left: true, status: 'attending', promoted: true };
-    }
+    // 有人離開後重新檢查候補：前面的組放得下就依序遞補。
+    const openSpots = event.maxPlayers - (event.existingPlayers ?? 0) - attendeeCount;
+    const promotion = waitlistCount > 0
+      ? await readPromotions(transaction, eventRef, openSpots, participantRef.id)
+      : { docs: [], people: 0 };
 
-    if (event.attendeeCount < 1) {
-      throw new HttpsError('failed-precondition', '正取人數資料不一致。');
-    }
     transaction.delete(participantRef);
-    transaction.update(eventRef, { attendeeCount: event.attendeeCount - 1 });
-    return { left: true, status: 'attending', promoted: false };
+    writePromotions(transaction, promotion.docs);
+    transaction.update(eventRef, {
+      attendeeCount: attendeeCount + promotion.people,
+      waitlistCount: waitlistCount - promotion.people,
+    });
+    return {
+      left: true,
+      status: participant.status,
+      promoted: promotion.docs.length,
+    };
   });
 }
 
@@ -230,28 +258,8 @@ exports.updateEvent = onCall(async (request) => {
       );
     }
 
-    let promoted = [];
-    if (plan.promote > 0) {
-      const queue = await transaction.get(
-        eventRef
-          .collection('participants')
-          .where('status', '==', 'waitlisted')
-          .orderBy('joinedAt', 'asc')
-          .orderBy(FieldPath.documentId(), 'asc')
-          .limit(plan.promote),
-      );
-      if (queue.size !== plan.promote) {
-        throw new HttpsError('failed-precondition', '候補名單與人數不一致。');
-      }
-      promoted = queue.docs;
-    }
-
-    for (const entry of promoted) {
-      transaction.update(entry.ref, {
-        status: 'attending',
-        promotedAt: FieldValue.serverTimestamp(),
-      });
-    }
+    const promotion = await readPromotions(transaction, eventRef, plan.openSpots);
+    writePromotions(transaction, promotion.docs);
     transaction.update(eventRef, {
       ...plan.fields,
       // 順便補上或更新主揪暱稱（舊場次沒有這個欄位）。
@@ -260,11 +268,11 @@ exports.updateEvent = onCall(async (request) => {
         : {}),
       startTime: Timestamp.fromDate(plan.startTime),
       endTime: Timestamp.fromDate(plan.endTime),
-      attendeeCount: (event.attendeeCount ?? 0) + promoted.length,
-      waitlistCount: (event.waitlistCount ?? 0) - promoted.length,
+      attendeeCount: (event.attendeeCount ?? 0) + promotion.people,
+      waitlistCount: (event.waitlistCount ?? 0) - promotion.people,
       updatedAt: FieldValue.serverTimestamp(),
     });
-    return { updated: true, promoted: promoted.length };
+    return { updated: true, promoted: promotion.docs.length };
   });
 });
 

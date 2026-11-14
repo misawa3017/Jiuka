@@ -70,6 +70,21 @@ void main() {
     expect(legacy.cancelledAt, isNull);
   });
 
+  test('同行朋友：一組人數含本人，舊資料視為 0 位朋友', () {
+    expect(
+      EventParticipant.fromMap({
+        'status': 'attending',
+        'guests': 2,
+      }, 'u').partySize,
+      3,
+    );
+    expect(EventParticipant.fromMap({'status': 'attending'}, 'u').partySize, 1);
+    final game = event(existing: 6, total: 10);
+    expect(game.fitsParty(4), isTrue);
+    expect(game.fitsParty(5), isFalse);
+    expect(game.copyWith(waitlistCount: 1).fitsParty(1), isFalse);
+  });
+
   test('取消期限：預設不限；有期限時開始前 N 小時內算超過', () {
     final start = event().startTime;
     expect(event().cancelDeadlineHours, 0);

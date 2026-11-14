@@ -1,6 +1,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { planEventUpdate, isPastCancelDeadline, EventUpdateError } = require('./event_update');
+const {
+  planEventUpdate,
+  isPastCancelDeadline,
+  pickPromotions,
+  partySize,
+  EventUpdateError,
+} = require('./event_update');
 
 const now = new Date('2027-01-01T00:00:00Z');
 const hour = 3_600_000;
@@ -27,16 +33,31 @@ const rejects = (current, overrides, code) =>
     (error) => error instanceof EventUpdateError && error.code === code,
   );
 
-test('名額調高時，依空出的名額遞補候補，最多補到候補人數', () => {
+test('名額調高或已約人數變少時算出空位；沒有候補就不用遞補', () => {
   const full = { attendeeCount: 4, waitlistCount: 3 };
-  assert.equal(planEventUpdate(full, input({ maxPlayers: 10 }), now).promote, 0);
-  assert.equal(planEventUpdate(full, input({ maxPlayers: 12 }), now).promote, 2);
-  assert.equal(planEventUpdate(full, input({ maxPlayers: 20 }), now).promote, 3);
+  assert.equal(planEventUpdate(full, input({ maxPlayers: 10 }), now).openSpots, 0);
+  assert.equal(planEventUpdate(full, input({ maxPlayers: 12 }), now).openSpots, 2);
+  assert.equal(planEventUpdate(full, input({ existingPlayers: 5 }), now).openSpots, 1);
+  assert.equal(planEventUpdate({ attendeeCount: 4, waitlistCount: 0 }, input({ maxPlayers: 20 }), now).openSpots, 0);
 });
 
-test('已約人數變少也會空出名額並遞補', () => {
-  const full = { attendeeCount: 4, waitlistCount: 2 };
-  assert.equal(planEventUpdate(full, input({ existingPlayers: 5 }), now).promote, 1);
+test('遞補整組一起上，前面那組放不下就停，後面不能插隊', () => {
+  const queue = [
+    { id: 'a', party: 1 },
+    { id: 'b', party: 3 },
+    { id: 'c', party: 1 },
+  ];
+  assert.deepEqual(pickPromotions(queue, 0), { ids: [], people: 0 });
+  assert.deepEqual(pickPromotions(queue, 1), { ids: ['a'], people: 1 });
+  assert.deepEqual(pickPromotions(queue, 3), { ids: ['a'], people: 1 });
+  assert.deepEqual(pickPromotions(queue, 4), { ids: ['a', 'b'], people: 4 });
+  assert.deepEqual(pickPromotions(queue, 9), { ids: ['a', 'b', 'c'], people: 5 });
+});
+
+test('一組人數：本人加同行朋友，舊資料視為 1 人', () => {
+  assert.equal(partySize({ guests: 2 }), 3);
+  assert.equal(partySize({}), 1);
+  assert.equal(partySize({ guests: 'x' }), 1);
 });
 
 test('名額不能低於已約人數加正取人數', () => {

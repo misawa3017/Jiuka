@@ -40,6 +40,13 @@ class EventParticipant {
   /// 報名時的暱稱；改暱稱時會同步。舊資料沒有這個欄位時為空字串。
   final String displayName;
 
+  /// 同行朋友人數（0～[maxGuests]），與本人一起占名額。
+  final int guests;
+  static const maxGuests = 3;
+
+  /// 一組人數：本人＋同行朋友。
+  int get partySize => 1 + guests;
+
   /// 主揪記錄的出席與收款狀態；未記錄時為 false。
   final bool attended;
   final bool paid;
@@ -49,6 +56,7 @@ class EventParticipant {
     required this.status,
     required this.joinedAt,
     this.displayName = '',
+    this.guests = 0,
     this.attended = false,
     this.paid = false,
   });
@@ -63,6 +71,7 @@ class EventParticipant {
             ? (map['joinedAt'] as Timestamp).toDate()
             : DateTime.fromMillisecondsSinceEpoch(0),
         displayName: _stringValue(map['displayName']).trim(),
+        guests: _intValue(map['guests'], 0).clamp(0, maxGuests),
         attended: _boolValue(map['attended'], false),
         paid: _boolValue(map['paid'], false),
       );
@@ -164,6 +173,9 @@ class Event {
   int get occupiedCount => existingPlayers + attendeeCount;
   int get spotsLeft => (maxPlayers - occupiedCount).clamp(0, maxPlayers);
   bool get isFull => spotsLeft == 0;
+
+  /// 這組人報名會不會進正取：沒有人候補且名額放得下整組（與規則一致）。
+  bool fitsParty(int partySize) => waitlistCount == 0 && spotsLeft >= partySize;
   bool canAcceptParticipants(DateTime now) =>
       status == EventStatus.open &&
       startTime.isAfter(now) &&

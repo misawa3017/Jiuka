@@ -75,8 +75,30 @@ function planEventUpdate(current, input, now) {
     },
     startTime: new Date(startTime),
     endTime: new Date(endTime),
-    promote: Math.min(waitlistCount, openSpots),
+    // 有空位且有人候補時才需要查候補名單；實際遞補誰由 pickPromotions 決定。
+    openSpots: waitlistCount > 0 ? openSpots : 0,
   };
+}
+
+/** 一組報名的人數：本人＋同行朋友（舊資料沒有 guests 視為 0）。 */
+const partySize = (participant) => 1 + (Number.isInteger(participant?.guests) ? participant.guests : 0);
+
+/**
+ * 依報名順序遞補候補：整組一起上，排在最前面的那組放不下就停止，
+ * 後面的組別不能插隊（嚴格先到先得）。
+ * @param {{id: string, party: number}[]} queue 依報名順序排好的候補
+ * @param {number} openSpots 目前空出的名額
+ * @returns {{ids: string[], people: number}}
+ */
+function pickPromotions(queue, openSpots) {
+  const ids = [];
+  let people = 0;
+  for (const entry of queue) {
+    if (people + entry.party > openSpots) break;
+    ids.push(entry.id);
+    people += entry.party;
+  }
+  return { ids, people };
 }
 
 /** 正取球友是否已超過自行取消的期限（候補不受限）。 */
@@ -86,4 +108,11 @@ function isPastCancelDeadline(event, now) {
   return now.getTime() > event.startTime.toMillis() - hours * 3_600_000;
 }
 
-module.exports = { planEventUpdate, isPastCancelDeadline, EventUpdateError, CANCEL_DEADLINES };
+module.exports = {
+  planEventUpdate,
+  isPastCancelDeadline,
+  pickPromotions,
+  partySize,
+  EventUpdateError,
+  CANCEL_DEADLINES,
+};

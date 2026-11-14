@@ -135,7 +135,7 @@ async function main() {
       batch.update(game(store), { [counter]: 1 });
       batch.set(doc(store, 'events', 'game', 'participants', uid), {
         eventId: 'game', userId: uid, status,
-        joinedAt: serverTimestamp(), ...extra,
+        joinedAt: serverTimestamp(), guests: 0, ...extra,
       });
       await batch.commit();
     };
@@ -143,6 +143,9 @@ async function main() {
     // 報名時必須帶上自己的暱稱，不能省略或冒用別人的名字。
     await assertFails(join(bob, 'bob', 'attending', 'attendeeCount', {}));
     await assertFails(join(bob, 'bob', 'attending', 'attendeeCount', { displayName: 'Alice' }));
+    // 同行朋友：0～3 人；名額不夠整組放不進正取，計數要加整組人數。
+    await assertFails(join(bob, 'bob', 'attending', 'attendeeCount', { displayName: 'Bob', guests: 4 }));
+    await assertFails(join(bob, 'bob', 'attending', 'attendeeCount', { displayName: 'Bob', guests: 1 }));
     await assertSucceeds(join(bob, 'bob', 'attending', 'attendeeCount'));
     await assertSucceeds(join(carol, 'carol', 'waitlisted', 'waitlistCount'));
     await assertFails(getDoc(doc(guest, 'events', 'game', 'participants', 'bob')));
@@ -214,7 +217,7 @@ async function main() {
     lateJoin.update(game(dave), { waitlistCount: 2 });
     lateJoin.set(doc(dave, 'events', 'game', 'participants', 'dave'), {
       eventId: 'game', userId: 'dave', status: 'waitlisted', joinedAt: serverTimestamp(),
-      displayName: 'Dave',
+      displayName: 'Dave', guests: 0,
     });
     await assertFails(lateJoin.commit());
 
@@ -268,6 +271,30 @@ async function main() {
     await assertFails(updateDoc(game(alice), { organizerName: '假主揪' }));
     await assertFails(updateDoc(game(bob), { organizerName: 'Bobby' }));
     await assertFails(updateDoc(game(alice), { organizerName: 'Alice 主揪', status: 0 }));
+
+    // 帶朋友報名：名額 5、已有主揪 1 人。
+    const groupEvent = (store) => doc(store, 'events', 'group-game');
+    await assertSucceeds(setDoc(groupEvent(alice), event({ organizerName: 'Alice 主揪', maxPlayers: 5 })));
+    const joinGroup = async (store, uid, name, status, counter, value, guests) => {
+      const batch = writeBatch(store);
+      batch.update(groupEvent(store), { [counter]: value });
+      batch.set(doc(store, 'events', 'group-game', 'participants', uid), {
+        eventId: 'group-game', userId: uid, status, joinedAt: serverTimestamp(), displayName: name, guests,
+      });
+      await batch.commit();
+    };
+    // 計數只加 1 但帶 2 位朋友 → 拒絕；正確加 3 → 成功（1 + 3 = 4 ≤ 5）。
+    await assertFails(joinGroup(bob, 'bob', 'Bobby', 'attending', 'attendeeCount', 1, 2));
+    await assertSucceeds(joinGroup(bob, 'bob', 'Bobby', 'attending', 'attendeeCount', 3, 2));
+    // 剩 1 位，carol 帶 1 位朋友（2 人）放不下 → 只能整組候補。
+    await assertFails(joinGroup(carol, 'carol', 'Carol', 'attending', 'attendeeCount', 5, 1));
+    await assertSucceeds(joinGroup(carol, 'carol', 'Carol', 'waitlisted', 'waitlistCount', 2, 1));
+    // 雖然還有 1 個空位，但已有人候補，新報名也要排候補（不能插隊）。
+    await assertSucceeds(setDoc(doc(dave, 'users', 'dave'), {
+      name: 'Dave', email: 'dave@example.com', avatarUrl: null, joinedGroups: [],
+    }));
+    await assertFails(joinGroup(dave, 'dave', 'Dave', 'attending', 'attendeeCount', 4, 0));
+    await assertSucceeds(joinGroup(dave, 'dave', 'Dave', 'waitlisted', 'waitlistCount', 3, 0));
     console.log('Firestore rules: all allow/deny cases passed');
   } finally {
     await env.cleanup();

@@ -99,6 +99,38 @@ void main() {
     },
   );
 
+  test('帶朋友報名：整組放得下進正取，計數加整組人數', () async {
+    // 名額 4、已有主揪 1 人。
+    eventData['maxPlayers'] = 4;
+    await repository.joinEvent('game', 'first', '小明', guests: 2);
+    expect(eventData['attendeeCount'], 3);
+    expect(participantData!['guests'], 2);
+    expect(participantData!['status'], 'attending');
+  });
+
+  test('帶朋友報名：名額不夠或已有人候補時整組進候補', () async {
+    eventData['maxPlayers'] = 3;
+    await repository.joinEvent('game', 'first', '小明', guests: 2);
+    expect(eventData['waitlistCount'], 3);
+    expect(eventData['attendeeCount'], 0);
+    expect(participantData!['status'], 'waitlisted');
+  });
+
+  test('已有人候補時，即使有空位也排候補', () async {
+    eventData['maxPlayers'] = 10;
+    eventData['waitlistCount'] = 2;
+    await repository.joinEvent('game', 'first', '小明');
+    expect(eventData['waitlistCount'], 3);
+    expect(participantData!['status'], 'waitlisted');
+  });
+
+  test('同行朋友超過 3 人不送出', () async {
+    expect(
+      () => repository.joinEvent('game', 'first', '小明', guests: 4),
+      throwsArgumentError,
+    );
+  });
+
   test('join is idempotent for an existing participant', () async {
     participantExists = true;
     await repository.joinEvent('game', 'first', '小明');

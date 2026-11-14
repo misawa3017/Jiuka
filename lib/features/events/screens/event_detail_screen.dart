@@ -443,6 +443,61 @@ class _EventDetails extends StatelessWidget {
     );
   }
 
+  /// 報名前選擇同行朋友人數，並預告整組會進正取還是候補。
+  Future<int?> _pickGuests(BuildContext context) {
+    var guests = 0;
+    return showDialog<int>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setState) {
+          final party = 1 + guests;
+          final fits = event.fitsParty(party);
+          return AlertDialog(
+            title: const Text('報名'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('有朋友跟你一起來嗎？朋友不用註冊，會和你一起占名額。'),
+                const SizedBox(height: 12),
+                SegmentedButton<int>(
+                  segments: [
+                    for (var n = 0; n <= EventParticipant.maxGuests; n++)
+                      ButtonSegment(
+                        value: n,
+                        label: Text(n == 0 ? '只有我' : '+$n'),
+                      ),
+                  ],
+                  selected: {guests},
+                  onSelectionChanged: (value) =>
+                      setState(() => guests = value.first),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  fits
+                      ? '共 $party 人，可以直接進正取。'
+                      : event.waitlistCount > 0
+                      ? '共 $party 人。目前已有人候補，會排在候補名單，依順序整組遞補。'
+                      : '共 $party 人，名額只剩 ${event.spotsLeft} 位，會整組進入候補。',
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('返回'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, guests),
+                child: Text(fits ? '確認報名' : '加入候補'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _confirmCost(BuildContext context) async {
     final controller = TextEditingController(
       text: '${event.finalCostPerPerson ?? event.suggestedFinalCost}',
@@ -638,9 +693,16 @@ class _EventDetails extends StatelessWidget {
     }
     return FilledButton.icon(
       onPressed: () async {
+        final guests = await _pickGuests(context);
+        if (guests == null || !context.mounted) return;
         try {
           final user = context.read<AuthRepository>().currentUser!;
-          await repository.joinEvent(event.id, user.id, user.name);
+          await repository.joinEvent(
+            event.id,
+            user.id,
+            user.name,
+            guests: guests,
+          );
         } catch (_) {
           if (context.mounted) {
             ScaffoldMessenger.of(
@@ -649,8 +711,8 @@ class _EventDetails extends StatelessWidget {
           }
         }
       },
-      icon: Icon(event.isFull ? Icons.hourglass_empty : Icons.how_to_reg),
-      label: Text(event.isFull ? '加入候補' : '我要報名'),
+      icon: Icon(event.fitsParty(1) ? Icons.how_to_reg : Icons.hourglass_empty),
+      label: Text(event.fitsParty(1) ? '我要報名' : '加入候補'),
     );
   }
 }
@@ -917,7 +979,7 @@ class _OrganizerRoster extends StatelessWidget {
           children: [
             _RosterHeading(
               label: '正取',
-              count: attendees.length,
+              count: attendees.fold(0, (sum, p) => sum + p.partySize),
               extra: attendees.isEmpty
                   ? null
                   : '到場 ${attendees.where((p) => p.attended).length}'
@@ -925,7 +987,10 @@ class _OrganizerRoster extends StatelessWidget {
             ),
             _Roster(users: attendees, onRemove: onRemove, onMark: onMark),
             const SizedBox(height: 12),
-            _RosterHeading(label: '候補', count: waitlist.length),
+            _RosterHeading(
+              label: '候補',
+              count: waitlist.fold(0, (sum, p) => sum + p.partySize),
+            ),
             _Roster(users: waitlist, onRemove: onRemove),
           ],
         );
@@ -993,9 +1058,12 @@ class _Roster extends StatelessWidget {
               ),
             ),
             title: Text(
-              users[index].displayName.isEmpty
-                  ? '球友 ${index + 1}'
-                  : users[index].displayName,
+              [
+                users[index].displayName.isEmpty
+                    ? '球友 ${index + 1}'
+                    : users[index].displayName,
+                if (users[index].guests > 0) '+${users[index].guests}',
+              ].join(' '),
             ),
             subtitle: onMark == null
                 ? null
