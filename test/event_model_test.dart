@@ -70,6 +70,16 @@ void main() {
     expect(legacy.cancelledAt, isNull);
   });
 
+  test('活動名稱可往返；沒填或舊場次以球館名稱當標題', () {
+    final named = event().copyWith(title: '週三晚間籃球');
+    expect(named.toMap()['title'], '週三晚間籃球');
+    expect(Event.fromMap(named.toMap(), 'e').displayTitle, '週三晚間籃球');
+    expect(event().displayTitle, '大安運動中心');
+    final legacy = event().toMap()..remove('title');
+    expect(Event.fromMap(legacy, 'old').title, '');
+    expect(Event.fromMap(legacy, 'old').displayTitle, '大安運動中心');
+  });
+
   test('存入縣市；舊場次沒有縣市時從地區全名推算', () {
     expect(event().toMap()['city'], '臺北市');
     expect(Event.fromMap(event().toMap(), 'e').city, '臺北市');

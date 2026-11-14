@@ -26,7 +26,7 @@ const rules = fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'ut
 const future = Timestamp.fromDate(new Date(Date.now() + 86_400_000));
 const later = Timestamp.fromDate(new Date(Date.now() + 90_000_000));
 const event = (overrides = {}) => ({
-  groupId: '', organizerId: 'alice', sport: 'basketball',
+  groupId: '', organizerId: 'alice', title: '週三晚間籃球', sport: 'basketball',
   city: '臺北市', district: '臺北市大安區', description: '', existingPlayers: 1,
   startTime: future, endTime: later, venue: '體育館', cost: 600,
   costMode: 'totalVenue', organizerPlaying: true, maxPlayers: 2,
@@ -77,6 +77,12 @@ async function main() {
     await assertFails(setDoc(game(alice), event({ city: '' })));
     await assertFails(setDoc(game(alice), event({ district: '新北市板橋區' })));
     await assertFails(setDoc(game(alice), event({ district: '臺北市' })));
+    // 活動名稱：選填（可空字串），最多 40 字，不能前後空白，也不能省略欄位。
+    const { title: _omitTitle, ...withoutTitle } = event();
+    await assertFails(setDoc(game(alice), withoutTitle));
+    await assertFails(setDoc(game(alice), event({ title: '名'.repeat(41) })));
+    await assertFails(setDoc(game(alice), event({ title: ' 前後空白 ' })));
+    await assertSucceeds(setDoc(doc(alice, 'events', 'untitled'), event({ title: '' })));
     await assertSucceeds(setDoc(game(alice), event()));
     await assertSucceeds(getDoc(game(guest)));
     await assertSucceeds(getDocs(query(collection(guest, 'events'), where('status', '==', 0))));

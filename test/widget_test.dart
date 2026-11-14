@@ -109,6 +109,7 @@ void main() {
     for (final section in ['基本資訊', '時間', '人數']) {
       expect(find.text(section), findsOneWidget);
     }
+    expect(find.text('活動名稱（選填）'), findsOneWidget);
     expect(find.text('縣市'), findsOneWidget);
     expect(find.text('發布場次'), findsOneWidget);
     await tester.scrollUntilVisible(

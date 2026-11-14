@@ -66,6 +66,10 @@ class Event {
   final String organizerId;
   final SportType? sport;
 
+  /// 主揪自訂的活動名稱（選填，最多 [maxTitleLength] 字）；空字串時畫面以球館名稱當標題。
+  final String title;
+  static const maxTitleLength = 40;
+
   /// 縣市，例如「臺北市」；用於首頁只選縣市時的篩選。
   final String city;
 
@@ -98,6 +102,7 @@ class Event {
     required this.groupId,
     this.organizerId = '',
     this.sport,
+    this.title = '',
     this.city = '',
     this.district = '',
     this.description = '',
@@ -117,6 +122,9 @@ class Event {
     this.cancelledAt,
   });
 
+  /// 畫面上的標題：有活動名稱用活動名稱，否則用球館名稱。
+  String get displayTitle => title.isNotEmpty ? title : venue;
+
   int get occupiedCount => existingPlayers + attendeeCount;
   int get spotsLeft => (maxPlayers - occupiedCount).clamp(0, maxPlayers);
   bool get isFull => spotsLeft == 0;
@@ -135,6 +143,7 @@ class Event {
     return {
       'groupId': groupId,
       'organizerId': organizerId,
+      'title': title,
       'sport': sport?.name,
       'city': city,
       'district': district,
@@ -168,6 +177,7 @@ class Event {
       sport: SportType.values
           .where((sport) => sport.name == map['sport'])
           .firstOrNull,
+      title: _stringValue(map['title']).trim(),
       // 舊場次沒有 city 欄位，從地區全名推算。
       city: _stringValue(map['city']).isNotEmpty
           ? _stringValue(map['city'])
@@ -210,6 +220,7 @@ class Event {
     String? groupId,
     String? organizerId,
     SportType? sport,
+    String? title,
     String? city,
     String? district,
     String? description,
@@ -231,6 +242,7 @@ class Event {
       groupId: groupId ?? this.groupId,
       organizerId: organizerId ?? this.organizerId,
       sport: sport ?? this.sport,
+      title: title ?? this.title,
       city: city ?? this.city,
       district: district ?? this.district,
       description: description ?? this.description,

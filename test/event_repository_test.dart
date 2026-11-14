@@ -177,6 +177,20 @@ void main() {
       expect(submitted!['district'], '新北市板橋區');
     });
 
+    test('活動名稱一併送出；超過 40 字或前後空白不送出', () async {
+      await repository.updateEvent(game.copyWith(title: '週三晚間籃球'));
+      expect(submitted!['title'], '週三晚間籃球');
+      submitted = null;
+      for (final title in ['名' * 41, ' 前後空白 ']) {
+        expect(
+          () => repository.updateEvent(game.copyWith(title: title)),
+          throwsArgumentError,
+          reason: title,
+        );
+      }
+      expect(submitted, isNull);
+    });
+
     test('名額低於已約人數加正取人數時，不送出', () async {
       // 已約 1 人 + 正取 1 人 = 2，名額改成 1 不合法。
       expect(

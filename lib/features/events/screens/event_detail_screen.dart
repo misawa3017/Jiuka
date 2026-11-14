@@ -253,7 +253,7 @@ class _EventDetails extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          event.venue,
+                          event.displayTitle,
                           style: theme.textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.w700,
                           ),
@@ -269,6 +269,11 @@ class _EventDetails extends StatelessWidget {
                           text:
                               '${time.format(event.startTime)} – ${time.format(event.endTime)}',
                         ),
+                        if (event.title.isNotEmpty)
+                          _InfoRow(
+                            icon: Icons.stadium_outlined,
+                            text: event.venue,
+                          ),
                         _InfoRow(
                           icon: Icons.place_outlined,
                           text: event.district,

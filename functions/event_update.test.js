@@ -5,6 +5,7 @@ const { planEventUpdate, EventUpdateError } = require('./event_update');
 const now = new Date('2027-01-01T00:00:00Z');
 const hour = 3_600_000;
 const input = (overrides = {}) => ({
+  title: '週三晚間籃球',
   sport: 'basketball',
   city: '臺北市',
   district: '臺北市大安區',
@@ -53,11 +54,16 @@ test('只回傳允許修改的欄位，時間轉成 Date', () => {
   assert.equal('attendeeCount' in plan.fields, false);
   assert.ok(plan.startTime instanceof Date);
   assert.equal(plan.fields.city, '臺北市');
+  assert.equal(plan.fields.title, '週三晚間籃球');
 });
 
 test('與發布場次相同的欄位驗證', () => {
   const empty = { attendeeCount: 0, waitlistCount: 0 };
   rejects(empty, { sport: 'tennis' }, 'invalid-argument');
+  rejects(empty, { title: ' 前後空白 ' }, 'invalid-argument');
+  rejects(empty, { title: '名'.repeat(41) }, 'invalid-argument');
+  rejects(empty, { title: undefined }, 'invalid-argument');
+  assert.equal(planEventUpdate(empty, input({ title: '' }), now).fields.title, '');
   rejects(empty, { district: ' ' }, 'invalid-argument');
   rejects(empty, { city: '' }, 'invalid-argument');
   rejects(empty, { district: '臺北市' }, 'invalid-argument');

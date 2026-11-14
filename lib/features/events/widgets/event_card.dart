@@ -97,7 +97,7 @@ class EventCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        event.venue,
+                        event.displayTitle,
                         style: theme.textTheme.titleMedium,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -113,7 +113,10 @@ class EventCard extends StatelessWidget {
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
-                              event.district,
+                              // 有活動名稱時，球館改顯示在地區後面。
+                              event.title.isEmpty
+                                  ? event.district
+                                  : '${event.district} · ${event.venue}',
                               style: theme.textTheme.bodyMedium?.copyWith(
                                 color: scheme.onSurfaceVariant,
                               ),

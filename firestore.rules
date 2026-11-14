@@ -80,13 +80,13 @@ service cloud.firestore {
       allow get, list: if true;
       allow create: if googleUser()
         && request.resource.data.keys().hasAll([
-          'groupId', 'organizerId', 'sport', 'city', 'district', 'description',
+          'groupId', 'organizerId', 'title', 'sport', 'city', 'district', 'description',
           'existingPlayers', 'startTime', 'endTime', 'venue', 'cost',
           'costMode', 'organizerPlaying', 'maxPlayers', 'attendeeCount',
           'waitlistCount', 'status', 'isRecurring'
         ])
         && request.resource.data.keys().hasOnly([
-          'groupId', 'organizerId', 'sport', 'city', 'district', 'description',
+          'groupId', 'organizerId', 'title', 'sport', 'city', 'district', 'description',
           'existingPlayers', 'startTime', 'endTime', 'venue', 'cost',
           'costMode', 'organizerPlaying', 'maxPlayers', 'attendeeCount',
           'waitlistCount', 'status', 'isRecurring'
@@ -98,6 +98,9 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.adminId == request.auth.uid
         ))
         && request.resource.data.sport in ['basketball', 'badminton']
+        // 活動名稱選填：可為空字串，最多 40 字，前後不得有空白。
+        && trimmedString(request.resource.data.title)
+        && request.resource.data.title.size() <= 40
         && trimmedNonEmpty(request.resource.data.city)
         && trimmedNonEmpty(request.resource.data.district)
         // 地區全名必須以縣市開頭，且後面還有鄉鎮市區，例如「臺北市」+「大安區」。

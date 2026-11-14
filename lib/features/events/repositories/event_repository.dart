@@ -31,6 +31,8 @@ class EventRepository extends ChangeNotifier {
   static void validateEvent(Event event) {
     if (event.organizerId.isEmpty ||
         event.sport == null ||
+        event.title != event.title.trim() ||
+        event.title.length > Event.maxTitleLength ||
         // 地區必須來自下拉清單：district 是 city 底下的鄉鎮市區全名。
         !taiwanDistricts.containsKey(event.city) ||
         cityOfDistrict(event.district) != event.city ||
@@ -57,6 +59,7 @@ class EventRepository extends ChangeNotifier {
   Future<void> updateEvent(Event event) async {
     validateEvent(event);
     final payload = {
+      'title': event.title,
       'sport': event.sport!.name,
       'city': event.city,
       'district': event.district,

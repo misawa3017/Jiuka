@@ -29,10 +29,11 @@ function planEventUpdate(current, input, now) {
   if (!input || typeof input !== 'object') invalid('場次資料無效。');
 
   const {
-    sport, city, district, venue, description, startTime, endTime,
+    title, sport, city, district, venue, description, startTime, endTime,
     cost, costMode, organizerPlaying, existingPlayers, maxPlayers,
   } = input;
 
+  if (!isTrimmed(title) || title.length > 40) invalid('活動名稱最多 40 字。');
   if (!SPORTS.includes(sport)) invalid('運動類型無效。');
   if (!isTrimmedNonEmpty(city)) invalid('請選擇縣市。');
   // 與 Firestore 規則一致：地區全名以縣市開頭，後面接鄉鎮市區。
@@ -65,7 +66,7 @@ function planEventUpdate(current, input, now) {
   const openSpots = maxPlayers - existingPlayers - attendeeCount;
   return {
     fields: {
-      sport, city, district, venue, description, cost, costMode,
+      title, sport, city, district, venue, description, cost, costMode,
       organizerPlaying, existingPlayers, maxPlayers,
     },
     startTime: new Date(startTime),

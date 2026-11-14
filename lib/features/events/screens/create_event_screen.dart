@@ -29,6 +29,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   // 地區由下拉選單選擇；舊場次的地區若不在清單內，編輯時需重新選擇。
   String? _city;
   String? _area;
+  final _titleController = TextEditingController();
   final _venueController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _costController = TextEditingController();
@@ -52,6 +53,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     if (event == null) return;
     _city = cityOfDistrict(event.district);
     _area = areaOfDistrict(event.district);
+    _titleController.text = event.title;
     _venueController.text = event.venue;
     _descriptionController.text = event.description;
     _costController.text = '${event.cost}';
@@ -69,6 +71,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   @override
   void dispose() {
     for (final controller in [
+      _titleController,
       _venueController,
       _descriptionController,
       _costController,
@@ -153,6 +156,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
       if (widget.initialEvent case final original?) {
         await repository.updateEvent(
           original.copyWith(
+            title: _titleController.text.trim(),
             sport: _sport,
             city: _city!,
             district: '$_city$_area',
@@ -175,6 +179,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           id: const Uuid().v4(),
           groupId: widget.groupId,
           organizerId: organizer.id,
+          title: _titleController.text.trim(),
           sport: _sport,
           city: _city!,
           district: '$_city$_area',
@@ -263,6 +268,17 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                     title: '基本資訊',
                     icon: Icons.sports_outlined,
                     children: [
+                      TextFormField(
+                        controller: _titleController,
+                        maxLength: Event.maxTitleLength,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: '活動名稱（選填）',
+                          hintText: '例如：週三晚間籃球揪團',
+                          prefixIcon: Icon(Icons.title),
+                          helperText: '沒填的話會以球館名稱當標題',
+                        ),
+                      ),
                       SegmentedButton<SportType>(
                         segments: [
                           for (final sport in SportType.values)
