@@ -50,7 +50,14 @@ npm ci --prefix functions
    ```
 
 3. 確認預覽結果與備份後，才加上 `--apply --confirm-private-roster-migration` 執行遷移。遷移會將名單放入私有子集合並從公開活動文件刪除 UID；它不會刪除或合併 Auth 帳號。
-4. Build Web 時帶入 Firebase Web App 設定，再部署規則、索引、Functions 與 Hosting：
+4. Build Web 時帶入 Firebase Web App 設定，再部署規則、索引、Functions 與 Hosting。macOS／Linux 可用 `scripts/build_web.sh [專案 ID]`，它會從 Firebase CLI 取得設定值，缺任何一項就停止，避免部署出無法啟動的網站：
+
+   ```sh
+   scripts/build_web.sh jiuka-test-ua1yc
+   firebase deploy --project jiuka-test-ua1yc --only firestore:rules,firestore:indexes,functions,hosting
+   ```
+
+   手動 build 的寫法：
 
    ```powershell
    flutter build web `
