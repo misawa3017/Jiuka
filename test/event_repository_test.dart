@@ -225,6 +225,17 @@ void main() {
       expect(submitted, isNull);
     });
 
+    test('取消期限一併送出，不在選項內的值不送出', () async {
+      await repository.updateEvent(game.copyWith(cancelDeadlineHours: 24));
+      expect(submitted!['cancelDeadlineHours'], 24);
+      submitted = null;
+      expect(
+        () => repository.updateEvent(game.copyWith(cancelDeadlineHours: 5)),
+        throwsArgumentError,
+      );
+      expect(submitted, isNull);
+    });
+
     test('名額低於已約人數加正取人數時，不送出', () async {
       // 已約 1 人 + 正取 1 人 = 2，名額改成 1 不合法。
       expect(

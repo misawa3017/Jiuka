@@ -38,6 +38,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   SportType _sport = SportType.basketball;
   CostMode _costMode = CostMode.perPerson;
   bool _organizerPlaying = true;
+  int _cancelDeadlineHours = 0;
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 1));
   TimeOfDay _startTime = const TimeOfDay(hour: 20, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 22, minute: 0);
@@ -63,6 +64,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     _sport = event.sport ?? SportType.basketball;
     _costMode = event.costMode;
     _organizerPlaying = event.organizerPlaying;
+    _cancelDeadlineHours = event.cancelDeadlineHours;
     _selectedDate = DateUtils.dateOnly(event.startTime);
     _startTime = TimeOfDay.fromDateTime(event.startTime);
     _endTime = TimeOfDay.fromDateTime(event.endTime);
@@ -169,6 +171,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
             costMode: _costMode,
             cost: int.parse(_costController.text),
             maxPlayers: maxPlayers,
+            cancelDeadlineHours: _cancelDeadlineHours,
           ),
         );
         if (mounted) context.pop();
@@ -193,6 +196,7 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           costMode: _costMode,
           cost: int.parse(_costController.text),
           maxPlayers: maxPlayers,
+          cancelDeadlineHours: _cancelDeadlineHours,
         ),
       );
       if (mounted) context.pop();
@@ -471,6 +475,31 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                             (int.tryParse(value ?? '') ?? -1) >= 0
                             ? null
                             : '請輸入有效金額',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  SectionCard(
+                    title: '取消規則',
+                    icon: Icons.event_busy_outlined,
+                    children: [
+                      DropdownButtonFormField<int>(
+                        initialValue: _cancelDeadlineHours,
+                        decoration: const InputDecoration(
+                          labelText: '球友自行取消的期限',
+                          helperText: '超過期限後正取球友要聯絡主揪才能退出；候補不受限',
+                        ),
+                        items: [
+                          for (final hours in Event.cancelDeadlineOptions)
+                            DropdownMenuItem(
+                              value: hours,
+                              child: Text(
+                                hours == 0 ? '不限，開始前都可取消' : '開始前 $hours 小時',
+                              ),
+                            ),
+                        ],
+                        onChanged: (value) =>
+                            setState(() => _cancelDeadlineHours = value ?? 0),
                       ),
                     ],
                   ),

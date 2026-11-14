@@ -102,6 +102,10 @@ class Event {
   final EventStatus status;
   final bool isRecurring;
 
+  /// 球友自行取消的期限：開始前幾小時；0 表示開始前都可取消。只限制正取。
+  final int cancelDeadlineHours;
+  static const cancelDeadlineOptions = [0, 2, 6, 24];
+
   /// 主揪最後一次編輯場次的時間；從未編輯為 null。只由後端寫入。
   final DateTime? updatedAt;
 
@@ -134,6 +138,7 @@ class Event {
     this.waitlistCount = 0,
     this.status = EventStatus.open,
     this.isRecurring = false,
+    this.cancelDeadlineHours = 0,
     this.updatedAt,
     this.cancelledAt,
     this.finalCostPerPerson,
@@ -141,6 +146,11 @@ class Event {
   });
 
   bool get isCostConfirmed => finalCostPerPerson != null;
+
+  /// 正取球友是否已超過自行取消的期限（與 Cloud Function 判斷一致）。
+  bool isPastCancelDeadline(DateTime now) =>
+      cancelDeadlineHours > 0 &&
+      now.isAfter(startTime.subtract(Duration(hours: cancelDeadlineHours)));
 
   /// 確定費用時的建議金額：固定費用沿用原價；場租以已確定人數平分並無條件進位。
   int get suggestedFinalCost {
@@ -187,6 +197,7 @@ class Event {
       'waitlistCount': waitlistCount,
       'status': status.index,
       'isRecurring': isRecurring,
+      'cancelDeadlineHours': cancelDeadlineHours,
     };
   }
 
@@ -237,6 +248,7 @@ class Event {
           ? EventStatus.values[statusIndex]
           : EventStatus.cancelled,
       isRecurring: _boolValue(map['isRecurring'], false),
+      cancelDeadlineHours: _intValue(map['cancelDeadlineHours'], 0),
       updatedAt: _optionalDateValue(map['updatedAt']),
       cancelledAt: _optionalDateValue(map['cancelledAt']),
       finalCostPerPerson: map['finalCostPerPerson'] is num
@@ -269,6 +281,7 @@ class Event {
     int? waitlistCount,
     EventStatus? status,
     bool? isRecurring,
+    int? cancelDeadlineHours,
   }) {
     return Event(
       id: id ?? this.id,
@@ -292,6 +305,7 @@ class Event {
       waitlistCount: waitlistCount ?? this.waitlistCount,
       status: status ?? this.status,
       isRecurring: isRecurring ?? this.isRecurring,
+      cancelDeadlineHours: cancelDeadlineHours ?? this.cancelDeadlineHours,
       updatedAt: updatedAt,
       cancelledAt: cancelledAt,
       finalCostPerPerson: finalCostPerPerson,

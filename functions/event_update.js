@@ -1,6 +1,8 @@
 // 主揪編輯場次的驗證與遞補計算。不碰資料庫，方便單獨測試。
 
 const SPORTS = ['basketball', 'badminton'];
+/** 球友自行取消的期限：開始前幾小時；0 表示不限。 */
+const CANCEL_DEADLINES = [0, 2, 6, 24];
 const COST_MODES = ['perPerson', 'totalVenue'];
 
 class EventUpdateError extends Error {
@@ -31,6 +33,7 @@ function planEventUpdate(current, input, now) {
   const {
     title, sport, city, district, venue, description, startTime, endTime,
     cost, costMode, organizerPlaying, existingPlayers, maxPlayers,
+    cancelDeadlineHours,
   } = input;
 
   if (!isTrimmed(title) || title.length > 40) invalid('活動名稱最多 40 字。');
@@ -53,6 +56,7 @@ function planEventUpdate(current, input, now) {
   if (!isNonNegativeInt(existingPlayers)) invalid('已約人數無效。');
   if (organizerPlaying && existingPlayers < 1) invalid('主揪上場時已約人數至少為 1。');
   if (!Number.isInteger(maxPlayers) || maxPlayers < 2) invalid('總名額至少 2 人。');
+  if (!CANCEL_DEADLINES.includes(cancelDeadlineHours)) invalid('取消期限無效。');
 
   const attendeeCount = current.attendeeCount ?? 0;
   const waitlistCount = current.waitlistCount ?? 0;
@@ -67,7 +71,7 @@ function planEventUpdate(current, input, now) {
   return {
     fields: {
       title, sport, city, district, venue, description, cost, costMode,
-      organizerPlaying, existingPlayers, maxPlayers,
+      organizerPlaying, existingPlayers, maxPlayers, cancelDeadlineHours,
     },
     startTime: new Date(startTime),
     endTime: new Date(endTime),
@@ -75,4 +79,11 @@ function planEventUpdate(current, input, now) {
   };
 }
 
-module.exports = { planEventUpdate, EventUpdateError };
+/** 正取球友是否已超過自行取消的期限（候補不受限）。 */
+function isPastCancelDeadline(event, now) {
+  const hours = event.cancelDeadlineHours ?? 0;
+  if (!hours) return false;
+  return now.getTime() > event.startTime.toMillis() - hours * 3_600_000;
+}
+
+module.exports = { planEventUpdate, isPastCancelDeadline, EventUpdateError, CANCEL_DEADLINES };

@@ -1,3 +1,4 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -287,6 +288,12 @@ class _EventDetails extends StatelessWidget {
                           _InfoRow(
                             icon: Icons.person_outline,
                             text: '主揪 ${event.organizerName}',
+                          ),
+                        if (event.cancelDeadlineHours > 0)
+                          _InfoRow(
+                            icon: Icons.event_busy_outlined,
+                            text:
+                                '開始前 ${event.cancelDeadlineHours} 小時內，正取不能自行取消',
                           ),
                       ],
                     ),
@@ -582,6 +589,12 @@ class _EventDetails extends StatelessWidget {
       );
     }
     if (organizerAlreadyPlaying) return null;
+    if (isAttending && event.isPastCancelDeadline(DateTime.now())) {
+      return const OutlinedButton(
+        onPressed: null,
+        child: Text('已超過取消期限，請聯絡主揪'),
+      );
+    }
     if (isAttending || isWaitlisted) {
       return OutlinedButton(
         onPressed: () async {
@@ -605,6 +618,13 @@ class _EventDetails extends StatelessWidget {
           if (confirmed != true || !context.mounted) return;
           try {
             await repository.leaveEvent(event.id, userId!);
+          } on FirebaseFunctionsException catch (error) {
+            // 例如剛好超過取消期限：顯示伺服器的說明。
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(error.message ?? '取消失敗，請稍後重試。')),
+              );
+            }
           } catch (_) {
             if (context.mounted) {
               ScaffoldMessenger.of(

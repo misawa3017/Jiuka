@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { planEventUpdate, EventUpdateError } = require('./event_update');
+const { planEventUpdate, isPastCancelDeadline, EventUpdateError } = require('./event_update');
 
 const now = new Date('2027-01-01T00:00:00Z');
 const hour = 3_600_000;
@@ -18,6 +18,7 @@ const input = (overrides = {}) => ({
   organizerPlaying: true,
   existingPlayers: 6,
   maxPlayers: 10,
+  cancelDeadlineHours: 0,
   ...overrides,
 });
 const rejects = (current, overrides, code) =>
@@ -76,5 +77,17 @@ test('與發布場次相同的欄位驗證', () => {
   rejects(empty, { costMode: 'free' }, 'invalid-argument');
   rejects(empty, { organizerPlaying: true, existingPlayers: 0 }, 'invalid-argument');
   rejects(empty, { maxPlayers: 1, existingPlayers: 1 }, 'invalid-argument');
+  rejects(empty, { cancelDeadlineHours: 5 }, 'invalid-argument');
+  rejects(empty, { cancelDeadlineHours: undefined }, 'invalid-argument');
+  assert.equal(planEventUpdate(empty, input({ cancelDeadlineHours: 24 }), now).fields.cancelDeadlineHours, 24);
   assert.throws(() => planEventUpdate(empty, null, now), EventUpdateError);
+});
+
+test('取消期限：不限時永遠可取消；有期限時開始前 N 小時內不能自行取消', () => {
+  const start = { toMillis: () => now.getTime() + 5 * hour };
+  assert.equal(isPastCancelDeadline({ startTime: start, cancelDeadlineHours: 0 }, now), false);
+  assert.equal(isPastCancelDeadline({ startTime: start }, now), false);
+  assert.equal(isPastCancelDeadline({ startTime: start, cancelDeadlineHours: 2 }, now), false);
+  assert.equal(isPastCancelDeadline({ startTime: start, cancelDeadlineHours: 6 }, now), true);
+  assert.equal(isPastCancelDeadline({ startTime: start, cancelDeadlineHours: 24 }, now), true);
 });

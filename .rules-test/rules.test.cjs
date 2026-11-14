@@ -30,7 +30,7 @@ const event = (overrides = {}) => ({
   city: '臺北市', district: '臺北市大安區', description: '', existingPlayers: 1,
   startTime: future, endTime: later, venue: '體育館', cost: 600,
   costMode: 'totalVenue', organizerPlaying: true, maxPlayers: 2,
-  attendeeCount: 0, waitlistCount: 0, status: 0, isRecurring: false,
+  attendeeCount: 0, waitlistCount: 0, status: 0, isRecurring: false, cancelDeadlineHours: 0,
   ...overrides,
 });
 
@@ -105,6 +105,9 @@ async function main() {
     await assertFails(setDoc(game(guest), event()));
     await assertFails(setDoc(game(bob), event()));
     await assertFails(setDoc(game(alice), event({ cost: -1 })));
+    await assertFails(setDoc(game(alice), event({ cancelDeadlineHours: 5 })));
+    const { cancelDeadlineHours: _omitDeadline, ...withoutDeadline } = event();
+    await assertFails(setDoc(game(alice), withoutDeadline));
     // 地區：必須有縣市，且地區全名以該縣市開頭、後面接鄉鎮市區。
     const { city: _omitCity, ...withoutCity } = event();
     await assertFails(setDoc(game(alice), withoutCity));

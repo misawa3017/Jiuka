@@ -114,13 +114,13 @@ service cloud.firestore {
           'groupId', 'organizerId', 'organizerName', 'title', 'sport', 'city', 'district', 'description',
           'existingPlayers', 'startTime', 'endTime', 'venue', 'cost',
           'costMode', 'organizerPlaying', 'maxPlayers', 'attendeeCount',
-          'waitlistCount', 'status', 'isRecurring'
+          'waitlistCount', 'status', 'isRecurring', 'cancelDeadlineHours'
         ])
         && request.resource.data.keys().hasOnly([
           'groupId', 'organizerId', 'organizerName', 'title', 'sport', 'city', 'district', 'description',
           'existingPlayers', 'startTime', 'endTime', 'venue', 'cost',
           'costMode', 'organizerPlaying', 'maxPlayers', 'attendeeCount',
-          'waitlistCount', 'status', 'isRecurring'
+          'waitlistCount', 'status', 'isRecurring', 'cancelDeadlineHours'
         ])
         && request.resource.data.organizerId == request.auth.uid
         // 主揪暱稱公開顯示在場次上，必須等於主揪自己的暱稱，避免冒名。
@@ -156,7 +156,9 @@ service cloud.firestore {
         && request.resource.data.attendeeCount == 0
         && request.resource.data.waitlistCount == 0
         && request.resource.data.status == 0
-        && request.resource.data.isRecurring == false;
+        && request.resource.data.isRecurring == false
+        // 球友自行取消的期限：開始前幾小時，0 表示不限。
+        && request.resource.data.cancelDeadlineHours in [0, 2, 6, 24];
       // 編輯場次經由 Cloud Function updateEvent（需在後端遞補候補），不開放前端直接寫入。
       allow update: if googleUser()
         && (

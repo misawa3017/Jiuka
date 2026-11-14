@@ -48,7 +48,8 @@ class EventRepository extends ChangeNotifier {
         event.existingPlayers < 0 ||
         event.occupiedCount > event.maxPlayers ||
         (event.organizerPlaying && event.existingPlayers == 0) ||
-        event.cost < 0) {
+        event.cost < 0 ||
+        !Event.cancelDeadlineOptions.contains(event.cancelDeadlineHours)) {
       throw ArgumentError('場次資料不完整或無效');
     }
   }
@@ -75,6 +76,7 @@ class EventRepository extends ChangeNotifier {
       'organizerPlaying': event.organizerPlaying,
       'existingPlayers': event.existingPlayers,
       'maxPlayers': event.maxPlayers,
+      'cancelDeadlineHours': event.cancelDeadlineHours,
     };
     if (_submitEventUpdate case final submit?) {
       await submit(event.id, payload);

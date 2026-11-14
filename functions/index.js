@@ -9,7 +9,7 @@ const { getMessaging } = require('firebase-admin/messaging');
 const { setGlobalOptions, logger } = require('firebase-functions/v2');
 const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { HttpsError, onCall } = require('firebase-functions/v2/https');
-const { planEventUpdate, EventUpdateError } = require('./event_update');
+const { planEventUpdate, isPastCancelDeadline, EventUpdateError } = require('./event_update');
 const {
   participantChangeNotice,
   eventChangeNotice,
@@ -110,7 +110,13 @@ function requireOpen(event, message) {
  * 把 uid 從場次名單移除；若移除的是正取且有候補，依報名順序遞補第一位。
  * 退出報名（本人）與管理者移除共用。
  */
-async function removeFromEvent(eventId, uid, closedMessage, authorize = async () => {}) {
+async function removeFromEvent(
+  eventId,
+  uid,
+  closedMessage,
+  authorize = async () => {},
+  { enforceDeadline = false } = {},
+) {
   const eventRef = db.collection('events').doc(eventId);
   const participantRef = eventRef.collection('participants').doc(uid);
   return db.runTransaction(async (transaction) => {
@@ -139,6 +145,13 @@ async function removeFromEvent(eventId, uid, closedMessage, authorize = async ()
     }
     if (participant.status !== 'attending') {
       throw new HttpsError('failed-precondition', '報名狀態無效。');
+    }
+    // 球友自行取消時檢查主揪設定的期限；主揪或管理者移除不受限。
+    if (enforceDeadline && isPastCancelDeadline(event, new Date())) {
+      throw new HttpsError(
+        'failed-precondition',
+        `已超過取消期限（開始前 ${event.cancelDeadlineHours} 小時），請聯絡主揪。`,
+      );
     }
 
     if (event.waitlistCount > 0) {
@@ -259,7 +272,9 @@ exports.updateEvent = onCall(async (request) => {
 exports.leaveEvent = onCall(async (request) => {
   const uid = requireGoogleUser(request, 'Google 登入後才能取消報名。');
   const eventId = requireId(request.data?.eventId, '場次編號無效。');
-  return removeFromEvent(eventId, uid, '場次已開始或不開放取消。');
+  return removeFromEvent(eventId, uid, '場次已開始或不開放取消。', undefined, {
+    enforceDeadline: true,
+  });
 });
 
 // 主揪或系統管理者把某位球友移出名單；正取被移除時候補會自動遞補。

@@ -70,6 +70,27 @@ void main() {
     expect(legacy.cancelledAt, isNull);
   });
 
+  test('取消期限：預設不限；有期限時開始前 N 小時內算超過', () {
+    final start = event().startTime;
+    expect(event().cancelDeadlineHours, 0);
+    expect(
+      event().isPastCancelDeadline(start.subtract(const Duration(minutes: 1))),
+      isFalse,
+    );
+    final strict = event().copyWith(cancelDeadlineHours: 6);
+    expect(
+      strict.isPastCancelDeadline(start.subtract(const Duration(hours: 7))),
+      isFalse,
+    );
+    expect(
+      strict.isPastCancelDeadline(start.subtract(const Duration(hours: 5))),
+      isTrue,
+    );
+    expect(Event.fromMap(strict.toMap(), 'e').cancelDeadlineHours, 6);
+    final legacy = event().toMap()..remove('cancelDeadlineHours');
+    expect(Event.fromMap(legacy, 'old').cancelDeadlineHours, 0);
+  });
+
   test('最終費用：建議金額依費用方式計算，確定後卡片顯示已確定', () {
     expect(event().suggestedFinalCost, 150);
     final rent = event(mode: CostMode.totalVenue, cost: 1000, existing: 3);
