@@ -88,7 +88,10 @@ class AuthRepository extends ChangeNotifier {
         return;
       }
       final profile = user == null ? null : await _loadOrCreateProfile(user);
-      if (revision == _revision) _currentUser = profile;
+      if (revision == _revision) {
+        _currentUser = profile;
+        if (profile != null) unawaited(backfillOrganizerName(profile));
+      }
     } catch (_) {
       if (revision == _revision) {
         _errorMessage = '無法載入帳號資料，請使用 Google 重新登入。';
@@ -103,6 +106,33 @@ class AuthRepository extends ChangeNotifier {
         _isLoading = false;
         _notify();
       }
+    }
+  }
+
+  /// 補上自己發布場次中缺少或過期的主揪暱稱（舊版場次沒有 organizerName）。
+  ///
+  /// 登入後在背景執行，不阻擋登入；失敗只記錄，下次登入會再試。
+  @visibleForTesting
+  Future<void> backfillOrganizerName(User profile) async {
+    try {
+      final organized = await _firestore
+          .collection('events')
+          .where('organizerId', isEqualTo: profile.id)
+          .get();
+      final stale = [
+        for (final event in organized.docs)
+          if (event.data()['organizerName'] != profile.name) event.reference,
+      ];
+      // 每批最多 500 筆寫入。
+      for (var start = 0; start < stale.length; start += 500) {
+        final batch = _firestore.batch();
+        for (final reference in stale.skip(start).take(500)) {
+          batch.update(reference, {'organizerName': profile.name});
+        }
+        await batch.commit();
+      }
+    } catch (error) {
+      debugPrint('補上主揪暱稱失敗：$error');
     }
   }
 
@@ -141,7 +171,10 @@ class AuthRepository extends ChangeNotifier {
       final user = result.user;
       if (user == null) throw StateError('Missing Google user');
       final profile = await _loadOrCreateProfile(user);
-      if (revision == _revision) _currentUser = profile;
+      if (revision == _revision) {
+        _currentUser = profile;
+        unawaited(backfillOrganizerName(profile));
+      }
     } catch (error) {
       if (revision == _revision) {
         _currentUser = null;

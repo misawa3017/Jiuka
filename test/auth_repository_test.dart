@@ -213,4 +213,63 @@ void main() {
     verify(() => batch.commit()).called(1);
     expect(fixture.repository.currentUser!.name, '新暱稱');
   });
+
+  group('登入時補上舊場次的主揪暱稱', () {
+    late MockCollection events;
+    late MockQuery organizedQuery;
+    late MockBatch batch;
+    late Map<DocumentReference, Map<String, dynamic>> updates;
+
+    MockEntry eventDoc(Map<String, dynamic> data) {
+      final doc = MockEntry();
+      when(() => doc.data()).thenReturn(data);
+      when(() => doc.reference).thenReturn(MockDocument());
+      return doc;
+    }
+
+    setUp(() {
+      registerFallbackValue(MockDocument());
+      events = MockCollection();
+      organizedQuery = MockQuery();
+      batch = MockBatch();
+      updates = {};
+      when(() => fixture.store.collection('events')).thenReturn(events);
+      when(
+        () => events.where('organizerId', isEqualTo: 'google-user'),
+      ).thenReturn(organizedQuery);
+      when(() => fixture.store.batch()).thenReturn(batch);
+      when(() => batch.update<Map<String, dynamic>>(any(), any())).thenAnswer((
+        invocation,
+      ) {
+        updates[invocation.positionalArguments[0] as DocumentReference] =
+            Map<String, dynamic>.from(invocation.positionalArguments[1] as Map);
+      });
+      when(() => batch.commit()).thenAnswer((_) async {});
+    });
+
+    test('只補缺少或過期的暱稱，已正確的不重寫', () async {
+      final missing = eventDoc({});
+      final outdated = eventDoc({'organizerName': '舊暱稱'});
+      final current = eventDoc({'organizerName': 'Google Name'});
+      final snapshot = MockQuerySnapshot();
+      when(() => snapshot.docs).thenReturn([missing, outdated, current]);
+      when(() => organizedQuery.get()).thenAnswer((_) async => snapshot);
+
+      await fixture.repository.signInWithGoogle();
+      await pumpEventQueue();
+
+      expect(updates[missing.reference], {'organizerName': 'Google Name'});
+      expect(updates[outdated.reference], {'organizerName': 'Google Name'});
+      expect(updates.containsKey(current.reference), isFalse);
+      verify(() => batch.commit()).called(1);
+    });
+
+    test('補資料失敗不影響登入', () async {
+      when(() => organizedQuery.get()).thenThrow(StateError('offline'));
+      await fixture.repository.signInWithGoogle();
+      await pumpEventQueue();
+      expect(fixture.repository.isAuthenticated, isTrue);
+      verifyNever(() => batch.commit());
+    });
+  });
 }
