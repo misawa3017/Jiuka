@@ -236,6 +236,26 @@ async function main() {
     await assertFails(updateDoc(adminTarget(root), { cost: 0 }));
     await assertSucceeds(updateDoc(adminTarget(root), { status: 2, cancelledAt: serverTimestamp() }));
 
+    // 確定費用：開始後才能確定；只有主揪或管理者；只能改這兩個欄位；已取消的不行。
+    const past = Timestamp.fromDate(new Date(Date.now() - 3_600_000));
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'events', 'played'), event({ startTime: past, endTime: Timestamp.now() }));
+      await setDoc(doc(context.firestore(), 'events', 'played-cancelled'), event({ startTime: past, endTime: Timestamp.now(), status: 2 }));
+    });
+    const confirm = (store, id, amount, extra = {}) => updateDoc(doc(store, 'events', id), {
+      finalCostPerPerson: amount, costConfirmedAt: serverTimestamp(), ...extra,
+    });
+    await assertFails(confirm(alice, 'admin-cancel', 200));
+    await assertFails(confirm(bob, 'played', 200));
+    await assertFails(confirm(alice, 'played', -1));
+    await assertFails(confirm(alice, 'played', 1.5));
+    await assertFails(confirm(alice, 'played', 200, { cost: 0 }));
+    await assertFails(updateDoc(doc(alice, 'events', 'played'), { finalCostPerPerson: 200, costConfirmedAt: Timestamp.now() }));
+    await assertFails(confirm(alice, 'played-cancelled', 200));
+    await assertSucceeds(confirm(alice, 'played', 200));
+    await assertSucceeds(confirm(root, 'played', 180));
+    assert.equal((await getDoc(doc(guest, 'events', 'played'))).data().finalCostPerPerson, 180);
+
     // 主揪改暱稱：同一批寫入同步自己的場次，包含已取消的 game；不能改別人的或亂填。
     const renameOrganizer = writeBatch(alice);
     renameOrganizer.update(doc(alice, 'users', 'alice'), { name: 'Alice 主揪' });

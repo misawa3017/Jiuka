@@ -169,6 +169,8 @@ service cloud.firestore {
             )
           // 改暱稱時同步自己發布過的場次（含已結束、已取消），所以不要求場次仍開放。
           || organizerRename()
+          // 場次開始後，主揪或管理者確定每人最終費用。
+          || organizerConfirmCost()
         );
       allow delete: if false;
       match /participants/{participantId} {
@@ -265,6 +267,16 @@ service cloud.firestore {
           && onlyCounter(['status', 'cancelledAt'])
           && request.resource.data.status == 2
           && request.resource.data.cancelledAt == request.time;
+      }
+
+      function organizerConfirmCost() {
+        return (resource.data.organizerId == request.auth.uid || isAdmin())
+          && resource.data.status != 2
+          && resource.data.startTime <= request.time
+          && onlyCounter(['finalCostPerPerson', 'costConfirmedAt'])
+          && request.resource.data.finalCostPerPerson is int
+          && request.resource.data.finalCostPerPerson >= 0
+          && request.resource.data.costConfirmedAt == request.time;
       }
 
       function organizerRename() {

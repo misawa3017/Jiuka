@@ -302,17 +302,26 @@ class _EventDetails extends StatelessWidget {
                       Expanded(
                         child: _StatCard(
                           icon: Icons.payments_outlined,
-                          label: event.costMode == CostMode.perPerson
+                          label: event.isCostConfirmed
+                              ? '每人費用（已確定）'
+                              : event.costMode == CostMode.perPerson
                               ? '每人費用'
                               : '每人預估',
-                          value: event.costMode == CostMode.perPerson
+                          value: event.isCostConfirmed
+                              ? '${event.finalCostPerPerson} 元'
+                              : event.costMode == CostMode.perPerson
                               ? '${event.cost} 元'
                               : estimated == null
                               ? '待估算'
                               : '約 $estimated 元',
-                          note: event.costMode == CostMode.perPerson
+                          valueColor: event.isCostConfirmed
+                              ? scheme.primary
+                              : null,
+                          note: event.isCostConfirmed
+                              ? '主揪已確定最終金額'
+                              : event.costMode == CostMode.perPerson
                               ? '固定費用'
-                              : '整場場租 ${event.cost} 元，依確定人數平分，最終金額可能變動',
+                              : '整場場租 ${event.cost} 元，依確定人數平分，最終金額由主揪於開始後確定',
                         ),
                       ),
                     ],
@@ -324,6 +333,30 @@ class _EventDetails extends StatelessWidget {
                     title: '主揪補充說明',
                     icon: Icons.notes,
                     children: [Text(event.description)],
+                  ),
+                ],
+                // 場次開始後（未取消）由主揪或管理者確定每人最終費用。
+                if (canManage &&
+                    event.status != EventStatus.cancelled &&
+                    !event.startTime.isAfter(DateTime.now())) ...[
+                  const SizedBox(height: 12),
+                  SectionCard(
+                    title: '費用結算',
+                    icon: Icons.request_quote_outlined,
+                    children: [
+                      Text(
+                        event.isCostConfirmed
+                            ? '已確定每人 ${event.finalCostPerPerson} 元，正取球友已收到通知。'
+                            : '確定後會通知正取球友，可再修改。',
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: () => _confirmCost(context),
+                        icon: const Icon(Icons.check_circle_outline),
+                        label: Text(
+                          event.isCostConfirmed ? '修改最終費用' : '確定每人費用',
+                        ),
+                      ),
+                    ],
                   ),
                 ],
                 if (canManage && canJoin) ...[
@@ -401,6 +434,66 @@ class _EventDetails extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmCost(BuildContext context) async {
+    final controller = TextEditingController(
+      text: '${event.finalCostPerPerson ?? event.suggestedFinalCost}',
+    );
+    final amount = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('確定每人費用'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              event.costMode == CostMode.perPerson
+                  ? '原訂每人 ${event.cost} 元，可依實際情況調整。'
+                  : '場租 ${event.cost} 元 ÷ ${event.occupiedCount} 人，'
+                        '無條件進位為 ${event.suggestedFinalCost} 元，可自行調整。',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: '每人費用',
+                suffixText: '元',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('返回'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final value = int.tryParse(controller.text.trim());
+              if (value != null && value >= 0) {
+                Navigator.pop(dialogContext, value);
+              }
+            },
+            child: const Text('確定'),
+          ),
+        ],
+      ),
+    );
+    // 不立即 dispose：對話框關閉動畫期間 TextField 仍在使用 controller。
+    if (amount == null || !context.mounted) return;
+    try {
+      await repository.confirmCost(event.id, amount);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('確定費用失敗，請稍後重試。')));
+      }
+    }
   }
 
   Future<void> _mark(

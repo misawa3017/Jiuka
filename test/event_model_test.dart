@@ -70,6 +70,22 @@ void main() {
     expect(legacy.cancelledAt, isNull);
   });
 
+  test('最終費用：建議金額依費用方式計算，確定後卡片顯示已確定', () {
+    expect(event().suggestedFinalCost, 150);
+    final rent = event(mode: CostMode.totalVenue, cost: 1000, existing: 3);
+    expect(rent.suggestedFinalCost, 334);
+    expect(rent.isCostConfirmed, isFalse);
+    final confirmed = Event.fromMap(
+      rent.toMap()
+        ..['finalCostPerPerson'] = 300
+        ..['costConfirmedAt'] = Timestamp.fromDate(DateTime(2026, 11, 20)),
+      'e',
+    );
+    expect(confirmed.isCostConfirmed, isTrue);
+    expect(confirmed.finalCostPerPerson, 300);
+    expect(rent.toMap().containsKey('finalCostPerPerson'), isFalse);
+  });
+
   test('報名者的出席與收款狀態，舊資料預設為未記錄', () {
     final marked = EventParticipant.fromMap({
       'status': 'attending',

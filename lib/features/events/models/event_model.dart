@@ -108,6 +108,10 @@ class Event {
   /// 主揪取消場次的時間；未取消為 null。
   final DateTime? cancelledAt;
 
+  /// 主揪在場次開始後確定的每人最終費用；未確定為 null，畫面顯示預估。
+  final int? finalCostPerPerson;
+  final DateTime? costConfirmedAt;
+
   Event({
     required this.id,
     required this.groupId,
@@ -132,7 +136,17 @@ class Event {
     this.isRecurring = false,
     this.updatedAt,
     this.cancelledAt,
+    this.finalCostPerPerson,
+    this.costConfirmedAt,
   });
+
+  bool get isCostConfirmed => finalCostPerPerson != null;
+
+  /// 確定費用時的建議金額：固定費用沿用原價；場租以已確定人數平分並無條件進位。
+  int get suggestedFinalCost {
+    if (costMode == CostMode.perPerson) return cost;
+    return occupiedCount == 0 ? cost : (cost / occupiedCount).ceil();
+  }
 
   /// 畫面上的標題：有活動名稱用活動名稱，否則用球館名稱。
   String get displayTitle => title.isNotEmpty ? title : venue;
@@ -225,6 +239,10 @@ class Event {
       isRecurring: _boolValue(map['isRecurring'], false),
       updatedAt: _optionalDateValue(map['updatedAt']),
       cancelledAt: _optionalDateValue(map['cancelledAt']),
+      finalCostPerPerson: map['finalCostPerPerson'] is num
+          ? (map['finalCostPerPerson'] as num).toInt()
+          : null,
+      costConfirmedAt: _optionalDateValue(map['costConfirmedAt']),
     );
   }
 
@@ -276,6 +294,8 @@ class Event {
       isRecurring: isRecurring ?? this.isRecurring,
       updatedAt: updatedAt,
       cancelledAt: cancelledAt,
+      finalCostPerPerson: finalCostPerPerson,
+      costConfirmedAt: costConfirmedAt,
     );
   }
 }

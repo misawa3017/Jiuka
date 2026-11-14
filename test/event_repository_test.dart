@@ -116,6 +116,17 @@ void main() {
     expect(leftEventId, 'game');
   });
 
+  test('確定費用寫入金額與伺服器時間，負數不送出', () async {
+    Map<Object, Object?>? written;
+    when(() => eventRef.update(any())).thenAnswer((invocation) async {
+      written = invocation.positionalArguments.first as Map<Object, Object?>;
+    });
+    await repository.confirmCost('game', 250);
+    expect(written!['finalCostPerPerson'], 250);
+    expect(written!['costConfirmedAt'], isA<FieldValue>());
+    expect(() => repository.confirmCost('game', -1), throwsArgumentError);
+  });
+
   test('記錄出席與收款只寫入有指定的欄位', () async {
     final writes = <Map<Object, Object?>>[];
     when(() => participantRef.update(any())).thenAnswer((invocation) async {

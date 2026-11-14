@@ -86,6 +86,15 @@ class EventRepository extends ChangeNotifier {
     });
   }
 
+  /// 場次開始後，主揪或管理者確定每人最終費用；正取球友會收到通知。
+  Future<void> confirmCost(String eventId, int amount) async {
+    if (amount < 0) throw ArgumentError('費用不能為負數');
+    await _firestore.collection('events').doc(eventId).update({
+      'finalCostPerPerson': amount,
+      'costConfirmedAt': FieldValue.serverTimestamp(),
+    });
+  }
+
   /// 主揪或管理者記錄出席與收款；規則只允許改這兩個欄位。
   Future<void> markParticipant(
     String eventId,
