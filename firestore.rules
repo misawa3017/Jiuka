@@ -6,6 +6,12 @@ service cloud.firestore {
         && request.auth.token.firebase.sign_in_provider == 'google.com';
     }
 
+    // 系統管理者名單：admins/{uid}，只能由 Firebase Console 或 Admin SDK 新增。
+    function isAdmin() {
+      return googleUser()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
     function ownAccount(uid) {
       return googleUser() && request.auth.uid == uid;
     }
@@ -35,6 +41,12 @@ service cloud.firestore {
         && settings.minute >= 0
         && settings.minute <= 59
       );
+    }
+
+    match /admins/{uid} {
+      // 只能查自己是不是管理者（前端用來決定是否顯示管理功能）；任何人都不能寫入。
+      allow get: if ownAccount(uid);
+      allow list, create, update, delete: if false;
     }
 
     match /users/{uid} {
@@ -142,8 +154,8 @@ service cloud.firestore {
       allow delete: if false;
       match /participants/{participantId} {
         allow get: if googleUser()
-          && (request.auth.uid == participantId || eventOrganizer(request.auth.uid));
-        allow list: if googleUser() && eventOrganizer(request.auth.uid);
+          && (request.auth.uid == participantId || eventOrganizer(request.auth.uid) || isAdmin());
+        allow list: if googleUser() && (eventOrganizer(request.auth.uid) || isAdmin());
         allow create: if googleUser()
           && request.auth.uid == participantId
           && request.resource.data.keys().hasAll(['eventId', 'userId', 'status', 'joinedAt', 'displayName'])
@@ -221,9 +233,9 @@ service cloud.firestore {
           );
       }
 
-      // 主揪在開始前取消整場：只能把狀態改成已取消（2），並記錄伺服器時間。
+      // 主揪或系統管理者在開始前取消整場：只能把狀態改成已取消（2），並記錄伺服器時間。
       function organizerCancel() {
-        return resource.data.organizerId == request.auth.uid
+        return (resource.data.organizerId == request.auth.uid || isAdmin())
           && onlyCounter(['status', 'cancelledAt'])
           && request.resource.data.status == 2
           && request.resource.data.cancelledAt == request.time;

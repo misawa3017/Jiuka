@@ -17,8 +17,12 @@ class AuthRepository extends ChangeNotifier {
   bool _disposed = false;
   int _revision = 0;
   String? _errorMessage;
+  String? _adminUserId;
 
   User? get currentUser => _currentUser;
+
+  /// 目前登入者是否為系統管理者（admins/{uid} 存在）；登入後在背景查詢。
+  bool get isAdmin => _currentUser != null && _adminUserId == _currentUser!.id;
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _currentUser != null;
   String? get errorMessage => _errorMessage;
@@ -90,7 +94,7 @@ class AuthRepository extends ChangeNotifier {
       final profile = user == null ? null : await _loadOrCreateProfile(user);
       if (revision == _revision) {
         _currentUser = profile;
-        if (profile != null) unawaited(backfillOrganizerName(profile));
+        if (profile != null) _onSignedIn(profile);
       }
     } catch (_) {
       if (revision == _revision) {
@@ -106,6 +110,24 @@ class AuthRepository extends ChangeNotifier {
         _isLoading = false;
         _notify();
       }
+    }
+  }
+
+  /// 登入成功後的背景工作：查詢管理者身分、補上舊場次的主揪暱稱。都不阻擋登入。
+  void _onSignedIn(User profile) {
+    unawaited(_loadAdminStatus(profile));
+    unawaited(backfillOrganizerName(profile));
+  }
+
+  Future<void> _loadAdminStatus(User profile) async {
+    try {
+      final admin = await _firestore.collection('admins').doc(profile.id).get();
+      if (_currentUser?.id != profile.id) return;
+      _adminUserId = admin.exists ? profile.id : null;
+      _notify();
+    } catch (error) {
+      // 查不到就當作一般使用者；後端規則與 Cloud Function 仍會再檢查。
+      debugPrint('查詢管理者身分失敗：$error');
     }
   }
 
@@ -173,7 +195,7 @@ class AuthRepository extends ChangeNotifier {
       final profile = await _loadOrCreateProfile(user);
       if (revision == _revision) {
         _currentUser = profile;
-        unawaited(backfillOrganizerName(profile));
+        _onSignedIn(profile);
       }
     } catch (error) {
       if (revision == _revision) {

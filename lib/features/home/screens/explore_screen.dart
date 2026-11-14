@@ -93,6 +93,8 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 const PopupMenuDivider(),
                 const PopupMenuItem(value: '/profile', child: Text('個人檔案')),
                 const PopupMenuItem(value: '/groups', child: Text('我的球隊')),
+                if (auth.isAdmin)
+                  const PopupMenuItem(value: '/admin', child: Text('管理後台')),
                 const PopupMenuItem(value: 'logout', child: Text('登出')),
               ],
             ),

@@ -154,6 +154,9 @@ class _EventDetails extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final isOrganizer = userId == event.organizerId;
+    // 系統管理者可管理任何場次：編輯、取消、看名單、移除報名者。
+    final isAdmin = context.watch<AuthRepository>().isAdmin;
+    final canManage = isOrganizer || isAdmin;
     final time = DateFormat('HH:mm');
     final action = _primaryAction(
       context,
@@ -248,7 +251,9 @@ class _EventDetails extends StatelessWidget {
                               _StatusChip(
                                 label: '你是主揪',
                                 color: scheme.secondary,
-                              ),
+                              )
+                            else if (isAdmin)
+                              _StatusChip(label: '管理者', color: scheme.error),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -321,17 +326,17 @@ class _EventDetails extends StatelessWidget {
                     children: [Text(event.description)],
                   ),
                 ],
-                if (isOrganizer && canJoin) ...[
+                if (canManage && canJoin) ...[
                   const SizedBox(height: 12),
                   SectionCard(
-                    title: '主揪管理',
+                    title: isOrganizer ? '主揪管理' : '管理者操作',
                     icon: Icons.manage_accounts_outlined,
                     children: [
                       _OrganizerActions(event: event, repository: repository),
                     ],
                   ),
                 ],
-                if (isOrganizer) ...[
+                if (canManage) ...[
                   const SizedBox(height: 12),
                   SectionCard(
                     title: '正取與候補名單',
@@ -340,6 +345,11 @@ class _EventDetails extends StatelessWidget {
                       _OrganizerRoster(
                         stream: repository.getParticipantsStream(event.id),
                         onRetry: onRetry,
+                        // 只有管理者可以移除報名者，且場次仍開放時才有意義。
+                        onRemove: isAdmin && canJoin
+                            ? (participant) =>
+                                  _confirmRemove(context, participant)
+                            : null,
                       ),
                     ],
                   ),
@@ -386,6 +396,51 @@ class _EventDetails extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmRemove(
+    BuildContext context,
+    EventParticipant participant,
+  ) async {
+    final name = participant.displayName.isEmpty
+        ? '這位球友'
+        : participant.displayName;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('把 $name 移出名單？'),
+        content: Text(
+          participant.status == EventParticipationStatus.attending
+              ? '移除後若有候補，第一位候補會自動遞補。目前沒有通知功能，請自行告知對方。'
+              : '移除後對方將不在候補名單中。目前沒有通知功能，請自行告知對方。',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('返回'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('確認移除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await repository.removeParticipant(event.id, participant.userId);
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('已將 $name 移出名單。')));
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('移除失敗，請稍後重試。')));
+      }
+    }
   }
 
   /// 底部固定的主要操作；沒有可做的操作時回傳 null。
@@ -676,8 +731,13 @@ class _OrganizerActions extends StatelessWidget {
 class _OrganizerRoster extends StatelessWidget {
   final Stream<List<EventParticipant>> stream;
   final VoidCallback onRetry;
+  final void Function(EventParticipant participant)? onRemove;
 
-  const _OrganizerRoster({required this.stream, required this.onRetry});
+  const _OrganizerRoster({
+    required this.stream,
+    required this.onRetry,
+    this.onRemove,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -709,10 +769,10 @@ class _OrganizerRoster extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             _RosterHeading(label: '正取', count: attendees.length),
-            _Roster(users: attendees),
+            _Roster(users: attendees, onRemove: onRemove),
             const SizedBox(height: 12),
             _RosterHeading(label: '候補', count: waitlist.length),
-            _Roster(users: waitlist),
+            _Roster(users: waitlist, onRemove: onRemove),
           ],
         );
       },
@@ -742,7 +802,8 @@ class _RosterHeading extends StatelessWidget {
 
 class _Roster extends StatelessWidget {
   final List<EventParticipant> users;
-  const _Roster({required this.users});
+  final void Function(EventParticipant participant)? onRemove;
+  const _Roster({required this.users, this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -773,10 +834,16 @@ class _Roster extends StatelessWidget {
                   ? '球友 ${index + 1}'
                   : users[index].displayName,
             ),
-            trailing: Text(
-              '#${index + 1}',
-              style: TextStyle(color: scheme.outline),
-            ),
+            trailing: onRemove == null
+                ? Text('#${index + 1}', style: TextStyle(color: scheme.outline))
+                : IconButton(
+                    tooltip: '移出名單',
+                    icon: Icon(
+                      Icons.person_remove_outlined,
+                      color: scheme.error,
+                    ),
+                    onPressed: () => onRemove!(users[index]),
+                  ),
           ),
       ],
     );

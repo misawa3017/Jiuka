@@ -272,4 +272,40 @@ void main() {
       verifyNever(() => batch.commit());
     });
   });
+
+  group('系統管理者身分', () {
+    late MockSnapshot adminSnapshot;
+
+    setUp(() {
+      final admins = MockCollection();
+      final adminDoc = MockDocument();
+      adminSnapshot = MockSnapshot();
+      when(() => fixture.store.collection('admins')).thenReturn(admins);
+      when(() => admins.doc('google-user')).thenReturn(adminDoc);
+      when(() => adminDoc.get()).thenAnswer((_) async => adminSnapshot);
+    });
+
+    test('admins 文件存在時為管理者，登出後清除', () async {
+      when(() => adminSnapshot.exists).thenReturn(true);
+      await fixture.repository.signInWithGoogle();
+      await pumpEventQueue();
+      expect(fixture.repository.isAdmin, isTrue);
+      await fixture.repository.logout();
+      expect(fixture.repository.isAdmin, isFalse);
+    });
+
+    test('admins 文件不存在或查詢失敗時不是管理者，且不影響登入', () async {
+      when(() => adminSnapshot.exists).thenReturn(false);
+      await fixture.repository.signInWithGoogle();
+      await pumpEventQueue();
+      expect(fixture.repository.isAdmin, isFalse);
+
+      await fixture.repository.logout();
+      when(() => adminSnapshot.exists).thenThrow(StateError('offline'));
+      await fixture.repository.signInWithGoogle();
+      await pumpEventQueue();
+      expect(fixture.repository.isAuthenticated, isTrue);
+      expect(fixture.repository.isAdmin, isFalse);
+    });
+  });
 }

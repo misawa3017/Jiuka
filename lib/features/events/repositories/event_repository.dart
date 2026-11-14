@@ -12,6 +12,7 @@ class EventRepository extends ChangeNotifier {
   final Future<void> Function(String eventId)? _cancelParticipation;
   final Future<void> Function(String eventId, Map<String, dynamic> event)?
   _submitEventUpdate;
+  final Future<void> Function(String eventId, String userId)? _submitRemoval;
 
   EventRepository({
     FirebaseFirestore? firestore,
@@ -19,10 +20,12 @@ class EventRepository extends ChangeNotifier {
     Future<void> Function(String eventId)? cancelParticipation,
     Future<void> Function(String eventId, Map<String, dynamic> event)?
     submitEventUpdate,
+    Future<void> Function(String eventId, String userId)? submitRemoval,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _functions = functions,
        _cancelParticipation = cancelParticipation,
-       _submitEventUpdate = submitEventUpdate;
+       _submitEventUpdate = submitEventUpdate,
+       _submitRemoval = submitRemoval;
 
   FirebaseFunctions get _callables =>
       _functions ?? FirebaseFunctions.instanceFor(region: 'asia-east1');
@@ -83,7 +86,33 @@ class EventRepository extends ChangeNotifier {
     });
   }
 
-  /// 主揪在開始前取消整場；規則只允許改狀態與取消時間。
+  /// 系統管理者把球友移出名單；正取被移除時候補會自動遞補（Cloud Function）。
+  Future<void> removeParticipant(String eventId, String userId) async {
+    if (_submitRemoval case final submit?) {
+      await submit(eventId, userId);
+      return;
+    }
+    await _callables.httpsCallable('removeParticipant').call({
+      'eventId': eventId,
+      'userId': userId,
+    });
+  }
+
+  /// 管理後台用：所有場次（含已取消、已結束），由新到舊，最多 200 場。
+  Stream<List<Event>> getAllEventsStream() {
+    return _firestore
+        .collection('events')
+        .orderBy('startTime', descending: true)
+        .limit(200)
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map((doc) => Event.fromMap(doc.data(), doc.id))
+              .toList(),
+        );
+  }
+
+  /// 主揪或系統管理者在開始前取消整場；規則只允許改狀態與取消時間。
   Future<void> cancelEvent(String eventId) async {
     await _firestore.collection('events').doc(eventId).update({
       'status': EventStatus.cancelled.index,

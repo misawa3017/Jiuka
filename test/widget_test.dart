@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
 import 'package:go_router/go_router.dart';
 import 'package:jiuka/core/router/app_router.dart';
+import 'package:jiuka/features/admin/screens/admin_screen.dart';
 import 'package:jiuka/features/auth/repositories/auth_repository.dart';
 import 'package:jiuka/features/auth/screens/login_screen.dart';
 import 'package:jiuka/features/events/screens/create_event_screen.dart';
@@ -119,5 +120,18 @@ void main() {
     );
     expect(find.text('費用'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('非管理者打開管理後台只看到提示', (tester) async {
+    final fixture = AuthFixture();
+    addTearDown(fixture.dispose);
+    await tester.runAsync(fixture.ready);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<AuthRepository>.value(
+        value: fixture.repository,
+        child: const MaterialApp(home: AdminScreen()),
+      ),
+    );
+    expect(find.text('只有系統管理者可以進入這個頁面。'), findsOneWidget);
   });
 }

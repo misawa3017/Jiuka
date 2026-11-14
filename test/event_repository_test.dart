@@ -116,6 +116,16 @@ void main() {
     expect(leftEventId, 'game');
   });
 
+  test('管理者移除報名者交給 Cloud Function', () async {
+    (String, String)? removed;
+    repository = EventRepository(
+      firestore: store,
+      submitRemoval: (eventId, userId) async => removed = (eventId, userId),
+    );
+    await repository.removeParticipant('game', 'bob');
+    expect(removed, ('game', 'bob'));
+  });
+
   group('主揪編輯與取消場次', () {
     late Event game;
     String? submittedId;

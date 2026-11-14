@@ -51,6 +51,16 @@ async function main() {
     const bob = google('bob');
     const carol = google('carol');
     const game = (store) => doc(store, 'events', 'game');
+    // 系統管理者 root：admins 文件只能繞過規則（等同 Console／Admin SDK）建立。
+    const root = google('root');
+    await env.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), 'admins', 'root'), { email: 'root@example.com' });
+    });
+    await assertSucceeds(getDoc(doc(root, 'admins', 'root')));
+    await assertFails(getDoc(doc(bob, 'admins', 'root')));
+    await assertFails(getDocs(collection(root, 'admins')));
+    await assertFails(setDoc(doc(bob, 'admins', 'bob'), { email: 'bob@example.com' }));
+    await assertFails(updateDoc(doc(root, 'admins', 'root'), { email: 'x@example.com' }));
 
     await assertSucceeds(setDoc(doc(alice, 'users', 'alice'), {
       name: 'Alice', email: 'alice@example.com', avatarUrl: null, joinedGroups: [],
@@ -127,6 +137,9 @@ async function main() {
     await assertFails(getDocs(roster(password)));
     await assertFails(getDoc(rosterEntry(bob, 'carol')));
     assert.equal((await getDoc(rosterEntry(alice, 'bob'))).data().displayName, 'Bob');
+    // 管理者可讀任何場次的名單。
+    await assertSucceeds(getDocs(roster(root)));
+    await assertSucceeds(getDoc(rosterEntry(root, 'bob')));
 
     // 改暱稱：本人可在同一批寫入同步名單上的暱稱；不能改成別的名字，也不能改別人的。
     const rename = writeBatch(bob);
@@ -180,6 +193,14 @@ async function main() {
       organizerId: 'bob', groupId: 'group',
     })));
     await assertSucceeds(setDoc(doc(alice, 'events', 'own-group'), event({ groupId: 'group' })));
+
+    // 管理者可取消別人的場次，但同樣只能改狀態，不能順便改其他欄位。
+    await assertSucceeds(setDoc(doc(alice, 'events', 'admin-cancel'), event()));
+    const adminTarget = (store) => doc(store, 'events', 'admin-cancel');
+    await assertFails(updateDoc(adminTarget(bob), { status: 2, cancelledAt: serverTimestamp() }));
+    await assertFails(updateDoc(adminTarget(root), { status: 2, cancelledAt: serverTimestamp(), cost: 0 }));
+    await assertFails(updateDoc(adminTarget(root), { cost: 0 }));
+    await assertSucceeds(updateDoc(adminTarget(root), { status: 2, cancelledAt: serverTimestamp() }));
 
     // 主揪改暱稱：同一批寫入同步自己的場次，包含已取消的 game；不能改別人的或亂填。
     const renameOrganizer = writeBatch(alice);

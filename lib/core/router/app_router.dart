@@ -1,5 +1,6 @@
 import 'package:go_router/go_router.dart';
 import 'package:flutter/material.dart';
+import '../../features/admin/screens/admin_screen.dart';
 import '../../features/auth/repositories/auth_repository.dart';
 import '../../features/home/screens/home_screen.dart';
 import '../../features/home/screens/explore_screen.dart';
@@ -66,6 +67,11 @@ GoRouter createAppRouter(AuthRepository auth) => GoRouter(
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) =>
           EditEventScreen(eventId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/admin',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => const AdminScreen(),
     ),
     GoRoute(
       path: '/profile',
