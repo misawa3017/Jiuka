@@ -29,12 +29,16 @@ function planEventUpdate(current, input, now) {
   if (!input || typeof input !== 'object') invalid('場次資料無效。');
 
   const {
-    sport, district, venue, description, startTime, endTime,
+    sport, city, district, venue, description, startTime, endTime,
     cost, costMode, organizerPlaying, existingPlayers, maxPlayers,
   } = input;
 
   if (!SPORTS.includes(sport)) invalid('運動類型無效。');
-  if (!isTrimmedNonEmpty(district)) invalid('請輸入地區。');
+  if (!isTrimmedNonEmpty(city)) invalid('請選擇縣市。');
+  // 與 Firestore 規則一致：地區全名以縣市開頭，後面接鄉鎮市區。
+  if (!isTrimmedNonEmpty(district) || !district.startsWith(city) || district.length <= city.length) {
+    invalid('請選擇鄉鎮市區。');
+  }
   if (!isTrimmedNonEmpty(venue)) invalid('請輸入地點。');
   if (!isTrimmed(description)) invalid('補充說明格式無效。');
   if (!Number.isInteger(startTime) || !Number.isInteger(endTime)) {
@@ -61,7 +65,7 @@ function planEventUpdate(current, input, now) {
   const openSpots = maxPlayers - existingPlayers - attendeeCount;
   return {
     fields: {
-      sport, district, venue, description, cost, costMode,
+      sport, city, district, venue, description, cost, costMode,
       organizerPlaying, existingPlayers, maxPlayers,
     },
     startTime: new Date(startTime),

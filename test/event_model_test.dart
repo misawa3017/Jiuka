@@ -14,7 +14,8 @@ void main() {
     groupId: '',
     organizerId: 'owner',
     sport: SportType.basketball,
-    district: '台北市大安區',
+    city: '臺北市',
+    district: '臺北市大安區',
     existingPlayers: existing,
     organizerPlaying: true,
     startTime: DateTime(2027, 1, 1, 19),
@@ -67,6 +68,19 @@ void main() {
     expect(legacy.sport, isNull);
     expect(legacy.updatedAt, isNull);
     expect(legacy.cancelledAt, isNull);
+  });
+
+  test('存入縣市；舊場次沒有縣市時從地區全名推算', () {
+    expect(event().toMap()['city'], '臺北市');
+    expect(Event.fromMap(event().toMap(), 'e').city, '臺北市');
+    final legacy = event().toMap()
+      ..remove('city')
+      ..['district'] = '台中市西屯區';
+    expect(Event.fromMap(legacy, 'old').city, '臺中市');
+    final unknown = event().toMap()
+      ..remove('city')
+      ..['district'] = '大安';
+    expect(Event.fromMap(unknown, 'old').city, '');
   });
 
   test('讀取編輯與取消時間，但發布時不寫入這兩個欄位', () {

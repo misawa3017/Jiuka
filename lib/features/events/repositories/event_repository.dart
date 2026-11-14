@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import '../../../core/data/taiwan_districts.dart';
 import '../models/event_model.dart';
 
 enum UserEventList { organized, attending, waitlisted }
@@ -30,7 +31,11 @@ class EventRepository extends ChangeNotifier {
   static void validateEvent(Event event) {
     if (event.organizerId.isEmpty ||
         event.sport == null ||
-        event.district.trim().isEmpty ||
+        // 地區必須來自下拉清單：district 是 city 底下的鄉鎮市區全名。
+        !taiwanDistricts.containsKey(event.city) ||
+        cityOfDistrict(event.district) != event.city ||
+        event.district != normalizeTaiwanPlace(event.district) ||
+        areaOfDistrict(event.district) == null ||
         event.venue.trim().isEmpty ||
         !event.startTime.isAfter(DateTime.now()) ||
         !event.endTime.isAfter(event.startTime) ||
@@ -53,7 +58,8 @@ class EventRepository extends ChangeNotifier {
     validateEvent(event);
     final payload = {
       'sport': event.sport!.name,
-      'district': event.district.trim(),
+      'city': event.city,
+      'district': event.district,
       'venue': event.venue.trim(),
       'description': event.description.trim(),
       'startTime': event.startTime.millisecondsSinceEpoch,
@@ -82,8 +88,10 @@ class EventRepository extends ChangeNotifier {
     });
   }
 
+  /// [district] 有值時以鄉鎮市區篩選；只給 [city] 時篩選整個縣市。
   Stream<List<Event>> searchUpcomingEvents({
     SportType? sport,
+    String? city,
     String? district,
     DateTime? day,
   }) {
@@ -105,9 +113,10 @@ class EventRepository extends ChangeNotifier {
       );
     }
     if (sport != null) query = query.where('sport', isEqualTo: sport.name);
-    final normalizedDistrict = district?.trim();
-    if (normalizedDistrict != null && normalizedDistrict.isNotEmpty) {
-      query = query.where('district', isEqualTo: normalizedDistrict);
+    if (district != null && district.isNotEmpty) {
+      query = query.where('district', isEqualTo: district);
+    } else if (city != null && city.isNotEmpty) {
+      query = query.where('city', isEqualTo: city);
     }
     return query
         .orderBy('startTime')

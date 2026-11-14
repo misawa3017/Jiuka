@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../../core/data/taiwan_districts.dart';
+
 enum EventStatus { open, closed, cancelled }
 
 enum SportType { basketball, badminton }
@@ -63,6 +65,11 @@ class Event {
   final String groupId;
   final String organizerId;
   final SportType? sport;
+
+  /// 縣市，例如「臺北市」；用於首頁只選縣市時的篩選。
+  final String city;
+
+  /// 縣市＋鄉鎮市區全名，例如「臺北市大安區」。
   final String district;
   final String description;
   final int existingPlayers;
@@ -91,6 +98,7 @@ class Event {
     required this.groupId,
     this.organizerId = '',
     this.sport,
+    this.city = '',
     this.district = '',
     this.description = '',
     this.existingPlayers = 0,
@@ -128,6 +136,7 @@ class Event {
       'groupId': groupId,
       'organizerId': organizerId,
       'sport': sport?.name,
+      'city': city,
       'district': district,
       'description': description,
       'existingPlayers': existingPlayers,
@@ -159,6 +168,10 @@ class Event {
       sport: SportType.values
           .where((sport) => sport.name == map['sport'])
           .firstOrNull,
+      // 舊場次沒有 city 欄位，從地區全名推算。
+      city: _stringValue(map['city']).isNotEmpty
+          ? _stringValue(map['city'])
+          : cityOfDistrict(_stringValue(map['district'])) ?? '',
       district: _stringValue(map['district']),
       description: _stringValue(map['description']),
       existingPlayers: _intValue(map['existingPlayers'], 0),
@@ -197,6 +210,7 @@ class Event {
     String? groupId,
     String? organizerId,
     SportType? sport,
+    String? city,
     String? district,
     String? description,
     int? existingPlayers,
@@ -217,6 +231,7 @@ class Event {
       groupId: groupId ?? this.groupId,
       organizerId: organizerId ?? this.organizerId,
       sport: sport ?? this.sport,
+      city: city ?? this.city,
       district: district ?? this.district,
       description: description ?? this.description,
       existingPlayers: existingPlayers ?? this.existingPlayers,

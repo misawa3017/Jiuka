@@ -27,7 +27,7 @@ const future = Timestamp.fromDate(new Date(Date.now() + 86_400_000));
 const later = Timestamp.fromDate(new Date(Date.now() + 90_000_000));
 const event = (overrides = {}) => ({
   groupId: '', organizerId: 'alice', sport: 'basketball',
-  district: '台北市大安區', description: '', existingPlayers: 1,
+  city: '臺北市', district: '臺北市大安區', description: '', existingPlayers: 1,
   startTime: future, endTime: later, venue: '體育館', cost: 600,
   costMode: 'totalVenue', organizerPlaying: true, maxPlayers: 2,
   attendeeCount: 0, waitlistCount: 0, status: 0, isRecurring: false,
@@ -71,6 +71,12 @@ async function main() {
     await assertFails(setDoc(game(guest), event()));
     await assertFails(setDoc(game(bob), event()));
     await assertFails(setDoc(game(alice), event({ cost: -1 })));
+    // 地區：必須有縣市，且地區全名以該縣市開頭、後面接鄉鎮市區。
+    const { city: _omitCity, ...withoutCity } = event();
+    await assertFails(setDoc(game(alice), withoutCity));
+    await assertFails(setDoc(game(alice), event({ city: '' })));
+    await assertFails(setDoc(game(alice), event({ district: '新北市板橋區' })));
+    await assertFails(setDoc(game(alice), event({ district: '臺北市' })));
     await assertSucceeds(setDoc(game(alice), event()));
     await assertSucceeds(getDoc(game(guest)));
     await assertSucceeds(getDocs(query(collection(guest, 'events'), where('status', '==', 0))));

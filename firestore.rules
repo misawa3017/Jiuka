@@ -80,13 +80,13 @@ service cloud.firestore {
       allow get, list: if true;
       allow create: if googleUser()
         && request.resource.data.keys().hasAll([
-          'groupId', 'organizerId', 'sport', 'district', 'description',
+          'groupId', 'organizerId', 'sport', 'city', 'district', 'description',
           'existingPlayers', 'startTime', 'endTime', 'venue', 'cost',
           'costMode', 'organizerPlaying', 'maxPlayers', 'attendeeCount',
           'waitlistCount', 'status', 'isRecurring'
         ])
         && request.resource.data.keys().hasOnly([
-          'groupId', 'organizerId', 'sport', 'district', 'description',
+          'groupId', 'organizerId', 'sport', 'city', 'district', 'description',
           'existingPlayers', 'startTime', 'endTime', 'venue', 'cost',
           'costMode', 'organizerPlaying', 'maxPlayers', 'attendeeCount',
           'waitlistCount', 'status', 'isRecurring'
@@ -98,7 +98,10 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.adminId == request.auth.uid
         ))
         && request.resource.data.sport in ['basketball', 'badminton']
+        && trimmedNonEmpty(request.resource.data.city)
         && trimmedNonEmpty(request.resource.data.district)
+        // 地區全名必須以縣市開頭，且後面還有鄉鎮市區，例如「臺北市」+「大安區」。
+        && request.resource.data.district.matches(request.resource.data.city + '.+')
         && trimmedString(request.resource.data.description)
         && trimmedNonEmpty(request.resource.data.venue)
         && request.resource.data.startTime is timestamp

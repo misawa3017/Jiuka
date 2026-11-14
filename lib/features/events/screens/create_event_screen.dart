@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:uuid/uuid.dart';
+import '../../../components/district_picker.dart';
+import '../../../core/data/taiwan_districts.dart';
 import '../../auth/repositories/auth_repository.dart';
 import '../models/event_model.dart';
 import '../repositories/event_repository.dart';
@@ -22,7 +24,9 @@ class CreateEventScreen extends StatefulWidget {
 
 class _CreateEventScreenState extends State<CreateEventScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _districtController = TextEditingController();
+  // 地區由下拉選單選擇；舊場次的地區若不在清單內，編輯時需重新選擇。
+  String? _city;
+  String? _area;
   final _venueController = TextEditingController();
   final _descriptionController = TextEditingController();
   final _costController = TextEditingController();
@@ -44,7 +48,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
     super.initState();
     final event = widget.initialEvent;
     if (event == null) return;
-    _districtController.text = event.district;
+    _city = cityOfDistrict(event.district);
+    _area = areaOfDistrict(event.district);
     _venueController.text = event.venue;
     _descriptionController.text = event.description;
     _costController.text = '${event.cost}';
@@ -62,7 +67,6 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   @override
   void dispose() {
     for (final controller in [
-      _districtController,
       _venueController,
       _descriptionController,
       _costController,
@@ -148,7 +152,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         await repository.updateEvent(
           original.copyWith(
             sport: _sport,
-            district: _districtController.text.trim(),
+            city: _city!,
+            district: '$_city$_area',
             venue: _venueController.text.trim(),
             description: _descriptionController.text.trim(),
             existingPlayers: existingPlayers,
@@ -169,7 +174,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           groupId: widget.groupId,
           organizerId: organizer.id,
           sport: _sport,
-          district: _districtController.text.trim(),
+          city: _city!,
+          district: '$_city$_area',
           venue: _venueController.text.trim(),
           description: _descriptionController.text.trim(),
           existingPlayers: existingPlayers,
@@ -239,14 +245,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
               ],
               onChanged: (value) => setState(() => _sport = value!),
             ),
-            TextFormField(
-              controller: _districtController,
-              decoration: const InputDecoration(
-                labelText: '地區',
-                hintText: '例如：台北市大安區',
-              ),
-              validator: (value) =>
-                  value == null || value.trim().isEmpty ? '請輸入地區' : null,
+            DistrictPicker(
+              city: _city,
+              area: _area,
+              onChanged: (city, area) => setState(() {
+                _city = city;
+                _area = area;
+              }),
             ),
             TextFormField(
               controller: _venueController,

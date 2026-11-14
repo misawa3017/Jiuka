@@ -6,7 +6,8 @@ const now = new Date('2027-01-01T00:00:00Z');
 const hour = 3_600_000;
 const input = (overrides = {}) => ({
   sport: 'basketball',
-  district: '台北市大安區',
+  city: '臺北市',
+  district: '臺北市大安區',
   venue: '大安運動中心',
   description: '',
   startTime: now.getTime() + 24 * hour,
@@ -51,12 +52,16 @@ test('只回傳允許修改的欄位，時間轉成 Date', () => {
   assert.equal('status' in plan.fields, false);
   assert.equal('attendeeCount' in plan.fields, false);
   assert.ok(plan.startTime instanceof Date);
+  assert.equal(plan.fields.city, '臺北市');
 });
 
 test('與發布場次相同的欄位驗證', () => {
   const empty = { attendeeCount: 0, waitlistCount: 0 };
   rejects(empty, { sport: 'tennis' }, 'invalid-argument');
   rejects(empty, { district: ' ' }, 'invalid-argument');
+  rejects(empty, { city: '' }, 'invalid-argument');
+  rejects(empty, { district: '臺北市' }, 'invalid-argument');
+  rejects(empty, { district: '新北市板橋區' }, 'invalid-argument');
   rejects(empty, { venue: ' 球館' }, 'invalid-argument');
   rejects(empty, { startTime: now.getTime() - hour }, 'invalid-argument');
   rejects(empty, { endTime: now.getTime() + 24 * hour }, 'invalid-argument');

@@ -35,7 +35,8 @@ void main() {
       groupId: '',
       organizerId: 'owner',
       sport: SportType.badminton,
-      district: 'Taipei',
+      city: '臺北市',
+      district: '臺北市大安區',
       existingPlayers: 1,
       organizerPlaying: true,
       startTime: DateTime.now().add(const Duration(days: 2)),
@@ -150,6 +151,30 @@ void main() {
       for (final key in ['organizerId', 'status', 'attendeeCount', 'groupId']) {
         expect(submitted!.containsKey(key), isFalse, reason: key);
       }
+    });
+
+    test('地區必須來自清單，且鄉鎮市區屬於該縣市', () async {
+      for (final (city, district) in [
+        ('臺北市', '新北市板橋區'),
+        ('臺北市', '臺北市'),
+        ('臺北市', '臺北市不存在區'),
+        ('台北市', '台北市大安區'),
+        ('', '臺北市大安區'),
+      ]) {
+        expect(
+          () => repository.updateEvent(
+            game.copyWith(city: city, district: district),
+          ),
+          throwsArgumentError,
+          reason: '$city / $district',
+        );
+      }
+      expect(submitted, isNull);
+      await repository.updateEvent(
+        game.copyWith(city: '新北市', district: '新北市板橋區'),
+      );
+      expect(submitted!['city'], '新北市');
+      expect(submitted!['district'], '新北市板橋區');
     });
 
     test('名額低於已約人數加正取人數時，不送出', () async {

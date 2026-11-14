@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../../components/district_picker.dart';
 import '../../auth/repositories/auth_repository.dart';
 import '../../events/models/event_model.dart';
 import '../../events/repositories/event_repository.dart';
@@ -14,31 +15,22 @@ class ExploreScreen extends StatefulWidget {
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
-  final _districtController = TextEditingController();
   SportType? _sport;
-  String? _district;
+  String? _city;
+  String? _area;
   DateTime? _day;
   int _refresh = 0;
 
-  @override
-  void dispose() {
-    _districtController.dispose();
-    super.dispose();
-  }
+  String? get _district =>
+      _city != null && _area != null ? '$_city$_area' : null;
 
-  void _applyDistrict() => setState(() {
-    final district = _districtController.text.trim();
-    _district = district.isEmpty ? null : district;
-  });
-
-  bool get _hasActiveFilters =>
-      _sport != null || _district != null || _day != null;
+  bool get _hasActiveFilters => _sport != null || _city != null || _day != null;
 
   void _clearFilters() {
-    _districtController.clear();
     setState(() {
       _sport = null;
-      _district = null;
+      _city = null;
+      _area = null;
       _day = null;
     });
   }
@@ -126,18 +118,15 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   ),
                 ),
                 SizedBox(
-                  width: 200,
-                  child: TextField(
-                    controller: _districtController,
-                    decoration: InputDecoration(
-                      labelText: '地區（完全相同）',
-                      suffixIcon: IconButton(
-                        tooltip: '搜尋地區',
-                        onPressed: _applyDistrict,
-                        icon: const Icon(Icons.search),
-                      ),
-                    ),
-                    onSubmitted: (_) => _applyDistrict(),
+                  width: 320,
+                  child: DistrictPicker(
+                    city: _city,
+                    area: _area,
+                    allowAny: true,
+                    onChanged: (city, area) => setState(() {
+                      _city = city;
+                      _area = area;
+                    }),
                   ),
                 ),
                 OutlinedButton.icon(
@@ -159,9 +148,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
           ),
           Expanded(
             child: StreamBuilder<List<Event>>(
-              key: ValueKey((_sport, _district, _day, _refresh)),
+              key: ValueKey((_sport, _city, _area, _day, _refresh)),
               stream: repository.searchUpcomingEvents(
                 sport: _sport,
+                city: _city,
                 district: _district,
                 day: _day,
               ),
