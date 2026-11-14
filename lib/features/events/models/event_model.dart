@@ -5,6 +5,7 @@ enum EventStatus { open, closed, cancelled }
 enum SportType { basketball, badminton }
 
 enum CostMode { perPerson, totalVenue }
+
 enum EventParticipationStatus { attending, waitlisted }
 
 String _stringValue(Object? value) => value is String ? value : '';
@@ -130,8 +131,8 @@ class Event {
     final statusIndex = rawStatus == null
         ? EventStatus.open.index
         : rawStatus is int
-            ? rawStatus
-            : -1;
+        ? rawStatus
+        : -1;
     return Event(
       id: id,
       groupId: _stringValue(map['groupId']),

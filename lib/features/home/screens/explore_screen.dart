@@ -26,11 +26,10 @@ class _ExploreScreenState extends State<ExploreScreen> {
     super.dispose();
   }
 
-  void _applyDistrict() =>
-      setState(() {
-        final district = _districtController.text.trim();
-        _district = district.isEmpty ? null : district;
-      });
+  void _applyDistrict() => setState(() {
+    final district = _districtController.text.trim();
+    _district = district.isEmpty ? null : district;
+  });
 
   bool get _hasActiveFilters =>
       _sport != null || _district != null || _day != null;
@@ -84,9 +83,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
               onPressed: () async {
                 await auth.logout();
                 if (context.mounted && auth.errorMessage != null) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(auth.errorMessage!)),
-                  );
+                  ScaffoldMessenger.of(
+                    context,
+                  ).showSnackBar(SnackBar(content: Text(auth.errorMessage!)));
                 }
               },
               icon: const Icon(Icons.logout),
@@ -191,9 +190,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          _hasActiveFilters
-                              ? '找不到符合條件的場次。'
-                              : '目前沒有開放報名的場次。',
+                          _hasActiveFilters ? '找不到符合條件的場次。' : '目前沒有開放報名的場次。',
                         ),
                         if (_hasActiveFilters) ...[
                           const SizedBox(height: 8),

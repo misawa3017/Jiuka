@@ -57,8 +57,8 @@ class _JiukaAppState extends State<JiukaApp> {
     return MaterialApp.router(
       title: 'Jiuka 揪咖',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.LightTheme(),
-      darkTheme: AppTheme.DarkTheme(),
+      theme: AppTheme.lightTheme(),
+      darkTheme: AppTheme.darkTheme(),
       themeMode: ThemeMode.system,
       routerConfig: _router,
     );

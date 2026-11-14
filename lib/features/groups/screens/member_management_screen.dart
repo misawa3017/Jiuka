@@ -13,7 +13,9 @@ class MemberManagementScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final groupRepo = context.watch<GroupRepository>();
     final user = context.watch<AuthRepository>().currentUser;
-    final matchingGroups = groupRepo.groups.where((group) => group.id == groupId);
+    final matchingGroups = groupRepo.groups.where(
+      (group) => group.id == groupId,
+    );
     final group = matchingGroups.isEmpty ? null : matchingGroups.first;
 
     if (group == null) {
@@ -76,9 +78,7 @@ class MemberManagementScreen extends StatelessWidget {
           const Card(
             child: Padding(
               padding: EdgeInsets.all(16),
-              child: Text(
-                '目前球隊只記錄成員身分，尚未取得其他成員的個人暱稱，因此不在這裡顯示臨時或虛構的姓名。',
-              ),
+              child: Text('目前球隊只記錄成員身分，尚未取得其他成員的個人暱稱，因此不在這裡顯示臨時或虛構的姓名。'),
             ),
           ),
         ],

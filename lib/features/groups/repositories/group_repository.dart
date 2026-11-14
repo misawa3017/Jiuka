@@ -12,8 +12,7 @@ class GroupRepository extends ChangeNotifier {
 
   List<Group> _groups = [];
   StreamSubscription<firebase_auth.User?>? _authSubscription;
-  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>?
-      _groupsSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _groupsSubscription;
   String? _userId;
   bool _receivedAuthState = false;
   bool _isLoading = true;
@@ -64,21 +63,24 @@ class GroupRepository extends ChangeNotifier {
     _isLoading = true;
     _error = null;
     notifyListeners();
-    _groupsSubscription = _firestore.collection('groups').snapshots().listen(
-      (snapshot) {
-        _groups = snapshot.docs
-            .map((doc) => Group.fromMap(doc.data(), doc.id))
-            .toList();
-        _isLoading = false;
-        _error = null;
-        notifyListeners();
-      },
-      onError: (Object error) {
-        _isLoading = false;
-        _error = error;
-        notifyListeners();
-      },
-    );
+    _groupsSubscription = _firestore
+        .collection('groups')
+        .snapshots()
+        .listen(
+          (snapshot) {
+            _groups = snapshot.docs
+                .map((doc) => Group.fromMap(doc.data(), doc.id))
+                .toList();
+            _isLoading = false;
+            _error = null;
+            notifyListeners();
+          },
+          onError: (Object error) {
+            _isLoading = false;
+            _error = error;
+            notifyListeners();
+          },
+        );
   }
 
   void retry() {

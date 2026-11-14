@@ -34,9 +34,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
 
     final user = context.read<AuthRepository>().currentUser;
     if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('請先使用 Google 登入，再建立球隊。')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('請先使用 Google 登入，再建立球隊。')));
       return;
     }
 
@@ -54,9 +54,9 @@ class _CreateGroupScreenState extends State<CreateGroupScreen> {
       if (mounted) context.pop();
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('建立球隊失敗，請檢查網路後重試。')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('建立球隊失敗，請檢查網路後重試。')));
       }
     } finally {
       if (mounted) setState(() => _isCreating = false);

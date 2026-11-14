@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 class AppTheme {
   static final TextTheme _textTheme = GoogleFonts.interTextTheme();
 
-  static ThemeData LightTheme() {
+  static ThemeData lightTheme() {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
@@ -24,7 +24,7 @@ class AppTheme {
     );
   }
 
-  static ThemeData DarkTheme() {
+  static ThemeData darkTheme() {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,

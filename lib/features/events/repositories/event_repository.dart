@@ -14,10 +14,9 @@ class EventRepository extends ChangeNotifier {
     FirebaseFirestore? firestore,
     FirebaseFunctions? functions,
     Future<void> Function(String eventId)? cancelParticipation,
-  })
-    : _firestore = firestore ?? FirebaseFirestore.instance,
-      _functions = functions,
-      _cancelParticipation = cancelParticipation;
+  }) : _firestore = firestore ?? FirebaseFirestore.instance,
+       _functions = functions,
+       _cancelParticipation = cancelParticipation;
 
   Future<void> createEvent(Event event) async {
     if (event.organizerId.isEmpty ||
@@ -186,8 +185,9 @@ class EventRepository extends ChangeNotifier {
       if (participant.exists) return;
       final isWaitlisted = event.isFull;
       transaction.update(eventRef, {
-        isWaitlisted ? 'waitlistCount' : 'attendeeCount':
-            isWaitlisted ? event.waitlistCount + 1 : event.attendeeCount + 1,
+        isWaitlisted ? 'waitlistCount' : 'attendeeCount': isWaitlisted
+            ? event.waitlistCount + 1
+            : event.attendeeCount + 1,
       });
       transaction.set(participantRef, {
         'eventId': eventId,

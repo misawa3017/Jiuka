@@ -102,10 +102,7 @@ class GroupDetailScreen extends StatelessWidget {
             if (isAdmin) ...[
               _AdminTools(groupId: group.id),
             ] else if (!isMember && currentUser != null) ...[
-              _JoinGroupButton(
-                groupId: group.id,
-                userId: currentUser.id,
-              ),
+              _JoinGroupButton(groupId: group.id, userId: currentUser.id),
             ],
 
             const SizedBox(height: 24),
@@ -154,9 +151,9 @@ class _JoinGroupButtonState extends State<_JoinGroupButton> {
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('加入球隊失敗，請稍後重試。')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('加入球隊失敗，請稍後重試。')));
       }
     } finally {
       if (mounted) setState(() => _isJoining = false);
@@ -166,9 +163,7 @@ class _JoinGroupButtonState extends State<_JoinGroupButton> {
   @override
   Widget build(BuildContext context) => FilledButton(
     onPressed: _isJoining ? null : _join,
-    style: FilledButton.styleFrom(
-      minimumSize: const Size(double.infinity, 50),
-    ),
+    style: FilledButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
     child: _isJoining
         ? const SizedBox.square(
             dimension: 20,

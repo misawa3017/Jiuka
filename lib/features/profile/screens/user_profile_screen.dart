@@ -59,9 +59,9 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('個人資料已更新。')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('個人資料已更新。')));
         context.pop();
       }
     } catch (_) {

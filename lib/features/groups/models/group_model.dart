@@ -1,7 +1,6 @@
 String _stringValue(Object? value) => value is String ? value : '';
 
-int _playerCountValue(Object? value) =>
-    value is int && value >= 2 ? value : 20;
+int _playerCountValue(Object? value) => value is int && value >= 2 ? value : 20;
 
 List<String> _memberIdsValue(Object? value, String adminId) {
   final memberIds = value is List
@@ -105,11 +104,7 @@ class RecurringEventSettings {
   });
 
   Map<String, dynamic> toMap() {
-    return {
-      'dayOfWeek': dayOfWeek,
-      'hour': hour,
-      'minute': minute,
-    };
+    return {'dayOfWeek': dayOfWeek, 'hour': hour, 'minute': minute};
   }
 
   factory RecurringEventSettings.fromMap(Map<String, dynamic> map) {
