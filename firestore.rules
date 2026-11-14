@@ -128,8 +128,8 @@ service cloud.firestore {
       allow delete: if false;
       match /participants/{participantId} {
         allow get: if googleUser()
-          && (request.auth.uid == participantId || eventOrganizer(eventId));
-        allow list: if googleUser() && eventOrganizer(eventId);
+          && (request.auth.uid == participantId || eventOrganizer(request.auth.uid));
+        allow list: if googleUser() && eventOrganizer(request.auth.uid);
         allow create: if googleUser()
           && request.auth.uid == participantId
           && request.resource.data.keys().hasAll(['eventId', 'userId', 'status', 'joinedAt'])

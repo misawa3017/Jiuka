@@ -19,6 +19,7 @@ const {
   writeBatch,
   collectionGroup,
   Timestamp,
+  serverTimestamp,
 } = require('firebase/firestore');
 
 const rules = fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8');
@@ -76,7 +77,7 @@ async function main() {
       batch.update(game(store), { [counter]: 1 });
       batch.set(doc(store, 'events', 'game', 'participants', uid), {
         eventId: 'game', userId: uid, status,
-        joinedAt: Timestamp.now(),
+        joinedAt: serverTimestamp(),
       });
       await batch.commit();
     };

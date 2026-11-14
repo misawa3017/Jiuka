@@ -31,6 +31,7 @@ void main() {
     repository = EventRepository(firestore: store);
     eventData = Event(
       id: 'game',
+      groupId: '',
       organizerId: 'owner',
       sport: SportType.badminton,
       district: 'Taipei',
@@ -48,7 +49,9 @@ void main() {
     when(() => events.doc('game')).thenReturn(eventRef);
     when(() => eventRef.collection('participants')).thenReturn(participants);
     when(() => participants.doc('first')).thenReturn(participantRef);
-    when(() => transaction.get(eventRef)).thenAnswer((_) async => eventSnapshot);
+    when(
+      () => transaction.get(eventRef),
+    ).thenAnswer((_) async => eventSnapshot);
     when(
       () => transaction.get(participantRef),
     ).thenAnswer((_) async => participantSnapshot);
@@ -61,11 +64,12 @@ void main() {
       );
       return transaction;
     });
-    when(() => transaction.set<Map<String, dynamic>>(participantRef, any()))
-        .thenAnswer((invocation) {
-          participantExists = true;
-          return transaction;
-        });
+    when(
+      () => transaction.set<Map<String, dynamic>>(participantRef, any()),
+    ).thenAnswer((invocation) {
+      participantExists = true;
+      return transaction;
+    });
     when(() => store.runTransaction<void>(any())).thenAnswer((invocation) {
       final operation =
           invocation.positionalArguments.first
@@ -76,13 +80,17 @@ void main() {
 
   tearDown(() => repository.dispose());
 
-  test('join records a private participant and updates only the count', () async {
-    await repository.joinEvent('game', 'first');
-    expect(eventData['attendeeCount'], 1);
-    expect(eventData.containsKey('attendeeIds'), isFalse);
-    verify(() => transaction.set<Map<String, dynamic>>(participantRef, any()))
-        .called(1);
-  });
+  test(
+    'join records a private participant and updates only the count',
+    () async {
+      await repository.joinEvent('game', 'first');
+      expect(eventData['attendeeCount'], 1);
+      expect(eventData.containsKey('attendeeIds'), isFalse);
+      verify(
+        () => transaction.set<Map<String, dynamic>>(participantRef, any()),
+      ).called(1);
+    },
+  );
 
   test('join is idempotent for an existing participant', () async {
     participantExists = true;

@@ -32,15 +32,15 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     try {
       await Clipboard.setData(ClipboardData(text: link.toString()));
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('場次連結已複製。')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('場次連結已複製。')));
       }
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('無法複製連結，請檢查瀏覽器剪貼簿權限。')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('無法複製連結，請檢查瀏覽器剪貼簿權限。')));
       }
     }
   }
@@ -79,7 +79,8 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
             if (participantSnapshot.hasError) {
               return _messagePage('載入報名狀態失敗。', onRetry: _retry);
             }
-            if (participantSnapshot.connectionState == ConnectionState.waiting) {
+            if (participantSnapshot.connectionState ==
+                ConnectionState.waiting) {
               return _loadingPage();
             }
             return _EventDetails(
@@ -198,8 +199,7 @@ class _EventDetails extends StatelessWidget {
               '其中 ${event.existingPlayers} 人由主揪事先安排'
               '${event.organizerPlaying ? '（含主揪）' : ''}',
             ),
-          if (event.waitlistCount > 0)
-            Text('目前候補 ${event.waitlistCount} 人'),
+          if (event.waitlistCount > 0) Text('目前候補 ${event.waitlistCount} 人'),
           if (event.status != EventStatus.open || !canJoin)
             const Padding(
               padding: EdgeInsets.only(top: 16),
@@ -238,7 +238,7 @@ class _EventDetails extends StatelessWidget {
                   );
                   if (confirmed != true || !context.mounted) return;
                   try {
-                    await repository.leaveEvent(event.id, userId);
+                    await repository.leaveEvent(event.id, userId!);
                   } catch (_) {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -253,7 +253,7 @@ class _EventDetails extends StatelessWidget {
               FilledButton(
                 onPressed: () async {
                   try {
-                    await repository.joinEvent(event.id, userId);
+                    await repository.joinEvent(event.id, userId!);
                   } catch (_) {
                     if (context.mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -272,10 +272,7 @@ class _EventDetails extends StatelessWidget {
               onRetry: onRetry,
             ),
           ],
-          if (kIsWeb) ...[
-            const SizedBox(height: 24),
-            const AdBannerWidget(),
-          ],
+          if (kIsWeb) ...[const SizedBox(height: 24), const AdBannerWidget()],
         ],
       ),
     );
@@ -298,10 +295,7 @@ class _OrganizerRoster extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text('名單載入失敗。'),
-              OutlinedButton(
-                onPressed: onRetry,
-                child: const Text('重新載入名單'),
-              ),
+              OutlinedButton(onPressed: onRetry, child: const Text('重新載入名單')),
             ],
           );
         }
