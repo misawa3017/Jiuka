@@ -94,6 +94,11 @@ class _ExploreScreenState extends State<ExploreScreen> {
           if (auth.isAuthenticated) ...[
             NotificationBell(userId: auth.currentUser!.id),
             IconButton(
+              tooltip: '球隊',
+              onPressed: () => context.push('/groups'),
+              icon: const Icon(Icons.groups_outlined),
+            ),
+            IconButton(
               tooltip: '我的場次',
               onPressed: () => context.push('/my-events'),
               icon: const Icon(Icons.event_note_outlined),
@@ -112,7 +117,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 ),
                 const PopupMenuDivider(),
                 const PopupMenuItem(value: '/profile', child: Text('個人檔案')),
-                const PopupMenuItem(value: '/groups', child: Text('我的球隊')),
+                const PopupMenuItem(value: '/groups', child: Text('球隊')),
                 if (auth.isAdmin)
                   const PopupMenuItem(value: '/admin', child: Text('管理後台')),
                 const PopupMenuItem(value: 'logout', child: Text('登出')),
