@@ -1,13 +1,44 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
+import '../../../core/router/app_router.dart';
 import '../repositories/auth_repository.dart';
 
-class LoginScreen extends StatelessWidget {
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  bool _leaving = false;
+
+  /// 登入成功後離開登入頁、回到原本要去的頁面。
+  ///
+  /// 路由的 redirect 只會重新檢查「目前網址」的頁面；登入頁若是用 push
+  /// 疊在其他頁面上開的，登入後不會被重新檢查，所以由登入頁自己跳轉。
+  void _leaveIfSignedIn(AuthRepository auth) {
+    if (_leaving || !auth.isAuthenticated) return;
+    final router = GoRouter.maybeOf(context);
+    if (router == null) return;
+    _leaving = true;
+    // 用登入頁自己的路由資訊：push 開啟時，路由器的「目前網址」仍是底下那頁。
+    String? from;
+    try {
+      from = GoRouterState.of(context).uri.queryParameters['from'];
+    } catch (_) {
+      from = router.routeInformationProvider.value.uri.queryParameters['from'];
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) router.go(safeReturnLocation(from));
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthRepository>();
+    _leaveIfSignedIn(auth);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     return Scaffold(
