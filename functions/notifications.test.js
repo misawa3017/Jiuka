@@ -4,6 +4,8 @@ const {
   participantChangeNotice,
   eventChangeNotice,
   removedNotice,
+  joinRequestNotice,
+  joinReviewedNotice,
 } = require('./notifications');
 
 const at = (ms) => ({ toMillis: () => ms });
@@ -44,4 +46,11 @@ test('費用確定只通知正取', () => {
 
 test('沒有活動名稱時用球館名稱', () => {
   assert.match(removedNotice({ venue: '三重運動中心' }).body, /三重運動中心/);
+});
+
+test('入隊申請與審核結果的通知內容', () => {
+  const group = { name: '三重夜貓籃球隊' };
+  assert.match(joinRequestNotice(group, '阿德').body, /阿德 申請加入 三重夜貓籃球隊/);
+  assert.equal(joinReviewedNotice(group, true).type, 'joinApproved');
+  assert.equal(joinReviewedNotice(group, false).type, 'joinRejected');
 });

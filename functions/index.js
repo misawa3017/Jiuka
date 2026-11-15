@@ -7,7 +7,7 @@ const {
 } = require('firebase-admin/firestore');
 const { getMessaging } = require('firebase-admin/messaging');
 const { setGlobalOptions, logger } = require('firebase-functions/v2');
-const { onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { HttpsError, onCall } = require('firebase-functions/v2/https');
 const {
   planEventUpdate,
@@ -20,6 +20,8 @@ const {
   participantChangeNotice,
   eventChangeNotice,
   removedNotice,
+  joinRequestNotice,
+  joinReviewedNotice,
 } = require('./notifications');
 
 initializeApp();
@@ -52,7 +54,7 @@ const adminRef = (uid) => db.collection('admins').doc(uid);
  * 發通知：寫入站內通知 users/{uid}/notifications，並推播到該使用者已開啟推播的瀏覽器。
  * 推播失敗不影響站內通知；失效的推播 token 會被清除。
  */
-async function notify(userIds, notice, eventId) {
+async function notify(userIds, notice, eventId, { groupId = '' } = {}) {
   const recipients = [...new Set(userIds)].filter(Boolean);
   if (recipients.length === 0) return;
   const { type, title, body } = notice;
@@ -65,6 +67,7 @@ async function notify(userIds, notice, eventId) {
         title,
         body,
         eventId,
+        groupId,
         read: false,
         createdAt: FieldValue.serverTimestamp(),
       });
@@ -80,7 +83,8 @@ async function notify(userIds, notice, eventId) {
   if (tokenDocs.length === 0) return;
 
   const project = process.env.GCLOUD_PROJECT;
-  const link = project ? `https://${project}.web.app/event/${eventId}` : undefined;
+  const path = eventId ? `/event/${eventId}` : `/group/${groupId}`;
+  const link = project ? `https://${project}.web.app${path}` : undefined;
   for (let start = 0; start < tokenDocs.length; start += 500) {
     const docs = tokenDocs.slice(start, start + 500);
     try {
@@ -333,4 +337,49 @@ exports.onEventUpdated = onDocumentUpdated('events/{eventId}', async (change) =>
   if (notice.attendingOnly) participants = participants.where('status', '==', 'attending');
   const snapshot = await participants.get();
   await notify(snapshot.docs.map((doc) => doc.id), notice, eventId);
+});
+
+// 有人申請加入球隊時通知隊長。
+exports.onJoinRequestCreated = onDocumentCreated(
+  'groups/{groupId}/joinRequests/{userId}',
+  async (snapshot) => {
+    const { groupId } = snapshot.params;
+    const group = (await db.collection('groups').doc(groupId).get()).data();
+    if (!group?.adminId) return;
+    const notice = joinRequestNotice(group, snapshot.data?.data()?.displayName);
+    await notify([group.adminId], notice, '', { groupId });
+  },
+);
+
+// 隊長核准或拒絕入隊申請；核准時把申請人加進成員並寫入申請時的暱稱，再通知申請人。
+exports.reviewJoinRequest = onCall(async (request) => {
+  const uid = requireGoogleUser(request, 'Google 登入後才能審核入隊申請。');
+  const groupId = requireId(request.data?.groupId, '球隊編號無效。');
+  const userId = requireId(request.data?.userId, '球友編號無效。');
+  const approve = request.data?.approve === true;
+
+  const groupRef = db.collection('groups').doc(groupId);
+  const requestRef = groupRef.collection('joinRequests').doc(userId);
+  const group = await db.runTransaction(async (transaction) => {
+    const [groupSnapshot, requestSnapshot] = await Promise.all([
+      transaction.get(groupRef),
+      transaction.get(requestRef),
+    ]);
+    if (!groupSnapshot.exists) throw new HttpsError('not-found', '找不到球隊。');
+    const data = groupSnapshot.data();
+    if (data.adminId !== uid) {
+      throw new HttpsError('permission-denied', '只有隊長可以審核入隊申請。');
+    }
+    if (!requestSnapshot.exists) throw new HttpsError('not-found', '這筆申請已經處理過或被撤回。');
+    transaction.delete(requestRef);
+    if (approve && !(data.memberIds || []).includes(userId)) {
+      transaction.update(groupRef, {
+        memberIds: FieldValue.arrayUnion(userId),
+        [`memberNames.${userId}`]: requestSnapshot.data().displayName || '',
+      });
+    }
+    return data;
+  });
+  await notify([userId], joinReviewedNotice(group, approve), '', { groupId });
+  return { approved: approve };
 });

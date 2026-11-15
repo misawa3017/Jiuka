@@ -7,6 +7,9 @@ class AppNotification {
   final String title;
   final String body;
   final String eventId;
+
+  /// 球隊相關通知（入隊申請、審核結果）連到這個球隊。
+  final String groupId;
   final bool read;
   final DateTime? createdAt;
 
@@ -16,6 +19,7 @@ class AppNotification {
     required this.title,
     required this.body,
     required this.eventId,
+    this.groupId = '',
     required this.read,
     this.createdAt,
   });
@@ -28,6 +32,7 @@ class AppNotification {
       title: map['title'] is String ? map['title'] as String : '',
       body: map['body'] is String ? map['body'] as String : '',
       eventId: map['eventId'] is String ? map['eventId'] as String : '',
+      groupId: map['groupId'] is String ? map['groupId'] as String : '',
       read: map['read'] == true,
       createdAt: created is Timestamp ? created.toDate() : null,
     );

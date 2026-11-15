@@ -47,6 +47,18 @@ class Group {
   /// 成員暱稱（UID → 暱稱）。加入或改暱稱時由本人寫入；舊球隊可能缺少部分成員。
   final Map<String, String> memberNames;
 
+  /// 幹部（隊長指派，協助管理場地與開場次）；舊球隊沒有這個欄位時為空。
+  /// 隊長存在 [adminId]，不在這份名單裡。
+  final List<String> officerIds;
+
+  bool isCaptain(String? userId) => userId != null && userId == adminId;
+  bool isOfficer(String? userId) =>
+      userId != null && officerIds.contains(userId);
+  bool isMember(String? userId) => userId != null && memberIds.contains(userId);
+
+  /// 隊長或幹部：可以管理場地、用球隊名義開場次。
+  bool canManage(String? userId) => isCaptain(userId) || isOfficer(userId);
+
   Group({
     required this.id,
     required this.name,
@@ -56,6 +68,7 @@ class Group {
     this.recurringEventSettings,
     this.memberIds = const [],
     this.memberNames = const {},
+    this.officerIds = const [],
   });
 
   Map<String, dynamic> toMap() {
@@ -67,6 +80,7 @@ class Group {
       'recurringEventSettings': recurringEventSettings?.toMap(),
       'memberIds': memberIds,
       'memberNames': memberNames,
+      'officerIds': officerIds,
     };
   }
 
@@ -84,6 +98,9 @@ class Group {
       ),
       memberIds: _memberIdsValue(map['memberIds'], adminId),
       memberNames: _memberNamesValue(map['memberNames']),
+      officerIds: map['officerIds'] is List
+          ? (map['officerIds'] as List).whereType<String>().toList()
+          : const [],
     );
   }
 

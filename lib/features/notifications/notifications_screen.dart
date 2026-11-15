@@ -14,6 +14,9 @@ IconData _iconFor(String type) => switch (type) {
   'updated' => Icons.update,
   'removed' => Icons.person_remove_outlined,
   'costConfirmed' => Icons.payments_outlined,
+  'joinRequest' => Icons.person_add_alt,
+  'joinApproved' => Icons.group_add_outlined,
+  'joinRejected' => Icons.group_off_outlined,
   _ => Icons.notifications_outlined,
 };
 
@@ -73,7 +76,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           .markRead(userId, item.id)
           .catchError((_) {});
     }
-    if (item.eventId.isNotEmpty) context.push('/event/${item.eventId}');
+    if (item.eventId.isNotEmpty) {
+      context.push('/event/${item.eventId}');
+    } else if (item.groupId.isNotEmpty) {
+      context.push('/group/${item.groupId}');
+    }
   }
 
   @override

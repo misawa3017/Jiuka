@@ -26,6 +26,12 @@ service cloud.firestore {
         && after[request.auth.uid] == myName();
     }
 
+    // 球隊隊長或幹部（舊球隊沒有 officerIds 時視為沒有幹部）。
+    function isGroupManager(group) {
+      return group.adminId == request.auth.uid
+        || request.auth.uid in group.get('officerIds', []);
+    }
+
     function ownAccount(uid) {
       return googleUser() && request.auth.uid == uid;
     }
@@ -102,7 +108,8 @@ service cloud.firestore {
       allow get, list: if googleUser();
       allow create: if googleUser()
         && request.resource.data.keys().hasAll(['name', 'description', 'adminId', 'maxPlayersDefault', 'recurringEventSettings', 'memberIds', 'memberNames'])
-        && request.resource.data.keys().hasOnly(['name', 'description', 'adminId', 'maxPlayersDefault', 'recurringEventSettings', 'memberIds', 'memberNames'])
+        && request.resource.data.keys().hasOnly(['name', 'description', 'adminId', 'maxPlayersDefault', 'recurringEventSettings', 'memberIds', 'memberNames', 'officerIds'])
+        && request.resource.data.get('officerIds', []) == []
         && request.resource.data.adminId == request.auth.uid
         && request.resource.data.memberIds == [request.auth.uid]
         && request.resource.data.memberNames == {(request.auth.uid): myName()}
@@ -114,19 +121,88 @@ service cloud.firestore {
         && validRecurringEventSettings(request.resource.data.recurringEventSettings)
         && request.resource.data.maxPlayersDefault is int
         && request.resource.data.maxPlayersDefault >= 2;
+      // 入隊改為申請＋隊長審核：核准由 Cloud Function reviewJoinRequest 寫入，前端不能自己加入。
       allow update: if googleUser()
         && (
-          // 加入球隊：把自己加進成員，並一併寫入自己的暱稱。
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberIds', 'memberNames'])
-            && !(request.auth.uid in resource.data.memberIds)
-            && request.resource.data.memberIds == resource.data.memberIds.concat([request.auth.uid])
-            && onlyMyMemberName()
-          // 已是成員：同步（或補上）自己的暱稱。
-          || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['memberNames'])
+          // 成員同步（或補上）自己的暱稱。
+          changedOnly(['memberNames'])
             && request.auth.uid in resource.data.memberIds
             && onlyMyMemberName()
+          // 隊長任免幹部：幹部必須是成員，隊長不能是幹部。
+          || isCaptain()
+            && changedOnly(['officerIds'])
+            && officersAfter() is list
+            && resource.data.memberIds.hasAll(officersAfter())
+            && !(resource.data.adminId in officersAfter())
+          // 隊長轉移給其他成員；新隊長同時從幹部名單移除。
+          || isCaptain()
+            && changedOnly(['adminId', 'officerIds'])
+            && request.resource.data.adminId in resource.data.memberIds
+            && request.resource.data.adminId != request.auth.uid
+            && !(request.resource.data.adminId in officersAfter())
+            && officersBefore().hasAll(officersAfter())
+          // 隊長移除一位成員（不能移除自己）。
+          || isCaptain()
+            && removesOneMember()
+            && !(request.auth.uid in removedMembers())
+          // 隊員或幹部自己退出；隊長要先轉移隊長才能退出。
+          || request.auth.uid != resource.data.adminId
+            && removesOneMember()
+            && removedMembers() == [request.auth.uid]
         );
       allow delete: if false;
+
+      function isCaptain() {
+        return resource.data.adminId == request.auth.uid;
+      }
+
+      function changedOnly(keys) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys);
+      }
+
+      function officersBefore() {
+        return resource.data.get('officerIds', []);
+      }
+
+      function officersAfter() {
+        return request.resource.data.get('officerIds', []);
+      }
+
+      function removedMembers() {
+        return resource.data.memberIds.removeAll(request.resource.data.memberIds);
+      }
+
+      // 剛好少了一位成員（隊長不能被移除），並一起清掉他的暱稱與幹部身分。
+      function removesOneMember() {
+        let removed = removedMembers();
+        return changedOnly(['memberIds', 'memberNames', 'officerIds'])
+          && removed.size() == 1
+          && request.resource.data.memberIds.size() == resource.data.memberIds.size() - 1
+          && resource.data.memberIds.hasAll(request.resource.data.memberIds)
+          && !(resource.data.adminId in removed)
+          && !(removed[0] in request.resource.data.get('memberNames', {}).keys())
+          && !(removed[0] in officersAfter())
+          && officersBefore().hasAll(officersAfter());
+      }
+
+      // 入隊申請：本人建立或撤回，隊長可以讀取；核准或拒絕由 Cloud Function 處理。
+      match /joinRequests/{uid} {
+        allow get: if ownAccount(uid) || groupCaptain();
+        allow list: if groupCaptain();
+        allow create: if ownAccount(uid)
+          && !(uid in get(/databases/$(database)/documents/groups/$(groupId)).data.memberIds)
+          && request.resource.data.keys().hasOnly(['userId', 'displayName', 'createdAt'])
+          && request.resource.data.userId == uid
+          && request.resource.data.displayName == myName()
+          && request.resource.data.createdAt == request.time;
+        allow delete: if ownAccount(uid);
+        allow update: if false;
+
+        function groupCaptain() {
+          return googleUser()
+            && get(/databases/$(database)/documents/groups/$(groupId)).data.adminId == request.auth.uid;
+        }
+      }
     }
 
     match /events/{eventId} {
@@ -149,9 +225,10 @@ service cloud.firestore {
         // 主揪暱稱公開顯示在場次上，必須等於主揪自己的暱稱，避免冒名。
         && request.resource.data.organizerName == ownName()
         && request.resource.data.groupId is string
+        // 球隊場次：隊長或幹部才能用球隊名義開。
         && (request.resource.data.groupId == '' || (
           exists(/databases/$(database)/documents/groups/$(request.resource.data.groupId))
-          && get(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data.adminId == request.auth.uid
+          && isGroupManager(get(/databases/$(database)/documents/groups/$(request.resource.data.groupId)).data)
         ))
         && request.resource.data.sport in ['basketball', 'badminton']
         // 活動名稱選填：可為空字串，最多 40 字，前後不得有空白。

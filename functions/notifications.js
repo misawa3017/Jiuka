@@ -49,4 +49,28 @@ function removedNotice(event) {
   return { type: 'removed', title: '你已被移出名單', body: `你已被移出場次：${eventTitle(event)}` };
 }
 
-module.exports = { participantChangeNotice, eventChangeNotice, removedNotice, eventTitle };
+/** 有人申請加入球隊：通知隊長。 */
+function joinRequestNotice(group, applicantName) {
+  return {
+    type: 'joinRequest',
+    title: '新的入隊申請',
+    body: `${applicantName || '有球友'} 申請加入 ${group?.name || '你的球隊'}`,
+  };
+}
+
+/** 隊長審核結果：通知申請人。 */
+function joinReviewedNotice(group, approved) {
+  const name = group?.name || '球隊';
+  return approved
+    ? { type: 'joinApproved', title: '入隊申請已核准', body: `歡迎加入 ${name}！` }
+    : { type: 'joinRejected', title: '入隊申請未通過', body: `${name} 這次沒有核准你的申請` };
+}
+
+module.exports = {
+  participantChangeNotice,
+  eventChangeNotice,
+  removedNotice,
+  joinRequestNotice,
+  joinReviewedNotice,
+  eventTitle,
+};

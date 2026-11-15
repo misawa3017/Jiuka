@@ -20,6 +20,7 @@ const {
   collectionGroup,
   Timestamp,
   serverTimestamp,
+  deleteField,
 } = require('firebase/firestore');
 
 const rules = fs.readFileSync(path.join(__dirname, '..', 'firestore.rules'), 'utf8');
@@ -233,17 +234,31 @@ async function main() {
     await assertSucceeds(setDoc(groupDoc(alice), newGroup()));
     await assertFails(getDoc(groupDoc(guest)));
     await assertFails(updateDoc(groupDoc(bob), { adminId: 'bob' }));
-    // 加入球隊：要同時寫入自己的暱稱；不能冒名或改別人的。
-    await assertFails(updateDoc(groupDoc(bob), { memberIds: ['alice', 'bob'] }));
+    // 入隊改為申請：前端不能自己把自己加進成員（連帶正確暱稱也不行）。
     await assertFails(updateDoc(groupDoc(bob), {
-      memberIds: ['alice', 'bob'], 'memberNames.bob': 'Alice',
-    }));
-    await assertFails(updateDoc(groupDoc(bob), {
-      memberIds: ['alice', 'bob'], 'memberNames.bob': 'Bobby', 'memberNames.alice': 'x',
-    }));
-    await assertSucceeds(updateDoc(groupDoc(bob), {
       memberIds: ['alice', 'bob'], 'memberNames.bob': 'Bobby',
     }));
+    // 申請：只能用自己的名義、自己的暱稱；隊長可讀，其他人不行。
+    const request = (store, uid) => doc(store, 'groups', 'group', 'joinRequests', uid);
+    await assertFails(setDoc(request(bob, 'carol'), { userId: 'carol', displayName: 'Carol', createdAt: serverTimestamp() }));
+    await assertFails(setDoc(request(bob, 'bob'), { userId: 'bob', displayName: '假名', createdAt: serverTimestamp() }));
+    await assertSucceeds(setDoc(request(bob, 'bob'), { userId: 'bob', displayName: 'Bobby', createdAt: serverTimestamp() }));
+    await assertSucceeds(getDoc(request(alice, 'bob')));
+    await assertSucceeds(getDocs(collection(alice, 'groups', 'group', 'joinRequests')));
+    await assertFails(getDocs(collection(bob, 'groups', 'group', 'joinRequests')));
+    await assertFails(getDoc(request(carol, 'bob')));
+    await assertFails(updateDoc(request(bob, 'bob'), { displayName: 'Bobby' }));
+    // 隊長也不能從前端直接刪除申請（核准、拒絕都走 Cloud Function 並發通知）。
+    await assertFails(deleteDoc(request(alice, 'bob')));
+    await assertSucceeds(deleteDoc(request(bob, 'bob')));
+    await assertFails(setDoc(request(alice, 'alice'), { userId: 'alice', displayName: '自訂暱稱', createdAt: serverTimestamp() }));
+    // 模擬 Cloud Function 核准 bob、carol、dave 入隊。
+    await env.withSecurityRulesDisabled(async (context) => {
+      await updateDoc(groupDoc(context.firestore()), {
+        memberIds: ['alice', 'bob', 'carol', 'dave'],
+        'memberNames.bob': 'Bobby', 'memberNames.carol': 'Carol', 'memberNames.dave': 'Dave',
+      });
+    });
     await assertFails(updateDoc(groupDoc(carol), { memberIds: ['carol'] }));
     // 成員同步自己的暱稱：只能改自己那格；非成員不行。
     const renameBob = writeBatch(bob);
@@ -251,10 +266,49 @@ async function main() {
     renameBob.update(groupDoc(bob), { 'memberNames.bob': 'Bob 新名' });
     await assertSucceeds(renameBob.commit());
     await assertFails(updateDoc(groupDoc(bob), { 'memberNames.alice': '亂改' }));
-    await assertFails(updateDoc(groupDoc(carol), { 'memberNames.carol': 'Carol' }));
-    assert.deepEqual((await getDoc(groupDoc(alice))).data().memberNames, {
-      alice: '自訂暱稱', bob: 'Bob 新名',
-    });
+    await assertFails(updateDoc(groupDoc(root), { 'memberNames.root': 'Root' }));
+    assert.equal((await getDoc(groupDoc(alice))).data().memberNames.bob, 'Bob 新名');
+
+    // 幹部：只有隊長能任免；幹部必須是成員，隊長不能是幹部。
+    await assertFails(updateDoc(groupDoc(bob), { officerIds: ['bob'] }));
+    await assertFails(updateDoc(groupDoc(alice), { officerIds: ['zed'] }));
+    await assertFails(updateDoc(groupDoc(alice), { officerIds: ['alice'] }));
+    await assertSucceeds(updateDoc(groupDoc(alice), { officerIds: ['bob', 'carol'] }));
+    // 隊長移除成員：要一起清掉暱稱與幹部身分；不能移除自己；非隊長不能移除別人。
+    await assertFails(updateDoc(groupDoc(bob), {
+      memberIds: ['alice', 'bob', 'dave'], 'memberNames.carol': deleteField(), officerIds: ['bob'],
+    }));
+    await assertFails(updateDoc(groupDoc(alice), { memberIds: ['alice', 'bob', 'dave'] }));
+    await assertSucceeds(updateDoc(groupDoc(alice), {
+      memberIds: ['alice', 'bob', 'dave'], 'memberNames.carol': deleteField(), officerIds: ['bob'],
+    }));
+    await assertFails(updateDoc(groupDoc(alice), {
+      memberIds: ['bob', 'dave'], 'memberNames.alice': deleteField(),
+    }));
+    // 成員自己退出：只能移除自己。
+    await assertFails(updateDoc(groupDoc(dave), {
+      memberIds: ['alice', 'dave'], 'memberNames.bob': deleteField(), officerIds: [],
+    }));
+    await assertSucceeds(updateDoc(groupDoc(dave), {
+      memberIds: ['alice', 'bob'], 'memberNames.dave': deleteField(),
+    }));
+    // 轉移隊長：只能轉給成員，並把新隊長移出幹部；之後原隊長就沒有隊長權限。
+    await assertFails(updateDoc(groupDoc(bob), { adminId: 'bob', officerIds: [] }));
+    await assertFails(updateDoc(groupDoc(alice), { adminId: 'zed' }));
+    await assertFails(updateDoc(groupDoc(alice), { adminId: 'bob' }));
+    await assertSucceeds(updateDoc(groupDoc(alice), { adminId: 'bob', officerIds: [] }));
+    await assertFails(updateDoc(groupDoc(alice), { officerIds: ['alice'] }));
+    await assertSucceeds(updateDoc(groupDoc(bob), { officerIds: ['alice'] }));
+    // 原隊長（現在是幹部）可以自己退出；新隊長不能直接退出。
+    await assertFails(updateDoc(groupDoc(bob), {
+      memberIds: ['alice'], 'memberNames.bob': deleteField(),
+    }));
+    // 非隊長、非幹部（dave 已退出）即使暱稱正確也不能用球隊名義開場次。
+    await assertFails(setDoc(doc(dave, 'events', 'not-manager'), event({
+      organizerId: 'dave', organizerName: 'Dave', groupId: 'group',
+    })));
+    // 幹部（alice）可以。
+    await assertSucceeds(setDoc(doc(alice, 'events', 'officer-event'), event({ groupId: 'group' })));
     await assertFails(setDoc(doc(bob, 'events', 'foreign-group'), event({
       organizerId: 'bob', groupId: 'group',
     })));

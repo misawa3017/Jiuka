@@ -1,5 +1,7 @@
 import '../../events/models/event_model.dart';
 import 'package:flutter/material.dart';
+import '../../auth/models/user_model.dart';
+import '../../../components/content_width.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../models/group_model.dart';
@@ -54,8 +56,9 @@ class GroupDetailScreen extends StatelessWidget {
     }
 
     final currentUser = authRepo.currentUser;
-    final isMember = group.memberIds.contains(currentUser?.id);
-    final isAdmin = group.adminId == currentUser?.id;
+    final userId = currentUser?.id;
+    final isMember = group.isMember(userId);
+    final canManage = group.canManage(userId);
 
     return Scaffold(
       appBar: AppBar(title: Text(group.name)),
@@ -99,11 +102,12 @@ class GroupDetailScreen extends StatelessWidget {
             const SizedBox(height: 24),
 
             // Actions
-            if (isAdmin) ...[
-              _AdminTools(groupId: group.id),
-            ] else if (!isMember && currentUser != null) ...[
-              _JoinGroupButton(groupId: group.id, userId: currentUser.id),
-            ],
+            if (canManage)
+              _ManagerTools(group: group, userId: userId!)
+            else if (isMember)
+              _MemberTools(group: group, userId: userId!)
+            else if (currentUser != null)
+              _JoinRequestButton(group: group, user: currentUser),
 
             const SizedBox(height: 24),
             Text('近期活動', style: Theme.of(context).textTheme.titleLarge),
@@ -123,55 +127,219 @@ class GroupDetailScreen extends StatelessWidget {
   }
 }
 
-class _JoinGroupButton extends StatefulWidget {
-  final String groupId;
-  final String userId;
+/// 非隊員：申請加入；送出後顯示「等待隊長審核」並可以撤回。
+class _JoinRequestButton extends StatefulWidget {
+  final Group group;
+  final User user;
 
-  const _JoinGroupButton({required this.groupId, required this.userId});
+  const _JoinRequestButton({required this.group, required this.user});
 
   @override
-  State<_JoinGroupButton> createState() => _JoinGroupButtonState();
+  State<_JoinRequestButton> createState() => _JoinRequestButtonState();
 }
 
-class _JoinGroupButtonState extends State<_JoinGroupButton> {
-  bool _isJoining = false;
+class _JoinRequestButtonState extends State<_JoinRequestButton> {
+  late final Stream<bool> _pending = context
+      .read<GroupRepository>()
+      .watchMyRequest(widget.group.id, widget.user.id);
+  bool _busy = false;
 
-  Future<void> _join() async {
-    if (_isJoining) return;
-    setState(() => _isJoining = true);
+  Future<void> _run(Future<void> Function() action, String failure) async {
+    setState(() => _busy = true);
     try {
-      final name = context.read<AuthRepository>().currentUser?.name ?? '';
-      await context.read<GroupRepository>().joinGroup(
-        widget.groupId,
-        widget.userId,
-        name,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('成功加入球隊！')));
-      }
+      await action();
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('加入球隊失敗，請稍後重試。')));
+        ).showSnackBar(SnackBar(content: Text(failure)));
       }
     } finally {
-      if (mounted) setState(() => _isJoining = false);
+      if (mounted) setState(() => _busy = false);
     }
   }
 
   @override
-  Widget build(BuildContext context) => FilledButton(
-    onPressed: _isJoining ? null : _join,
-    style: FilledButton.styleFrom(minimumSize: const Size(double.infinity, 50)),
-    child: _isJoining
-        ? const SizedBox.square(
-            dimension: 20,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
-        : const Text('加入球隊', style: TextStyle(fontSize: 18)),
+  Widget build(BuildContext context) {
+    final repository = context.read<GroupRepository>();
+    final scheme = Theme.of(context).colorScheme;
+    return StreamBuilder<bool>(
+      stream: _pending,
+      builder: (context, snapshot) {
+        if (snapshot.data == true) {
+          return Card(
+            child: ListTile(
+              leading: Icon(Icons.schedule, color: scheme.tertiary),
+              title: const Text('已送出申請，等待隊長審核'),
+              subtitle: const Text('審核結果會通知你'),
+              trailing: TextButton(
+                onPressed: _busy
+                    ? null
+                    : () => _run(
+                        () => repository.withdrawRequest(
+                          widget.group.id,
+                          widget.user.id,
+                        ),
+                        '撤回失敗，請稍後重試。',
+                      ),
+                child: const Text('撤回'),
+              ),
+            ),
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FilledButton.icon(
+              onPressed: _busy || !snapshot.hasData
+                  ? null
+                  : () => _run(
+                      () => repository.requestToJoin(
+                        widget.group.id,
+                        widget.user.id,
+                        widget.user.name,
+                      ),
+                      '申請失敗，請稍後重試。',
+                    ),
+              icon: const Icon(Icons.person_add_alt),
+              label: const Text('申請加入'),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '送出後由隊長審核，結果會通知你',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 隊長或幹部：開球隊場次、管理成員（隊長會看到待審核數量）。
+class _ManagerTools extends StatelessWidget {
+  final Group group;
+  final String userId;
+  const _ManagerTools({required this.group, required this.userId});
+
+  @override
+  Widget build(BuildContext context) {
+    final captain = group.isCaptain(userId);
+    return SectionCard(
+      title: captain ? '隊長功能' : '幹部功能',
+      icon: Icons.admin_panel_settings_outlined,
+      children: [
+        if (captain)
+          StreamBuilder<List<JoinRequest>>(
+            stream: context.read<GroupRepository>().watchJoinRequests(group.id),
+            builder: (context, snapshot) {
+              final count = snapshot.data?.length ?? 0;
+              if (count == 0) return const SizedBox.shrink();
+              return Material(
+                color: Theme.of(context).colorScheme.tertiaryContainer,
+                borderRadius: BorderRadius.circular(12),
+                child: ListTile(
+                  leading: const Icon(Icons.person_add_alt),
+                  title: Text('$count 筆入隊申請等待審核'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => context.push('/group/${group.id}/members'),
+                ),
+              );
+            },
+          ),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: () =>
+                    context.push('/group/${group.id}/create-event'),
+                icon: const Icon(Icons.add),
+                label: const Text('開球隊場次'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => context.push('/group/${group.id}/members'),
+                icon: const Icon(Icons.groups_outlined),
+                label: Text(captain ? '成員管理' : '查看成員'),
+              ),
+            ),
+          ],
+        ),
+        if (!captain) _LeaveButton(group: group, userId: userId),
+      ],
+    );
+  }
+}
+
+/// 一般隊員：查看成員、退出球隊。
+class _MemberTools extends StatelessWidget {
+  final Group group;
+  final String userId;
+  const _MemberTools({required this.group, required this.userId});
+
+  @override
+  Widget build(BuildContext context) {
+    return SectionCard(
+      title: '你是隊員',
+      icon: Icons.verified_user_outlined,
+      children: [
+        OutlinedButton.icon(
+          onPressed: () => context.push('/group/${group.id}/members'),
+          icon: const Icon(Icons.groups_outlined),
+          label: const Text('查看成員'),
+        ),
+        _LeaveButton(group: group, userId: userId),
+      ],
+    );
+  }
+}
+
+class _LeaveButton extends StatelessWidget {
+  final Group group;
+  final String userId;
+  const _LeaveButton({required this.group, required this.userId});
+
+  Future<void> _leave(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('退出「${group.name}」？'),
+        content: const Text('退出後要重新申請、由隊長核准才能再加入。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('返回'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('退出球隊'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await context.read<GroupRepository>().removeMember(group.id, userId);
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('退出失敗，請稍後重試。')));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => TextButton.icon(
+    onPressed: () => _leave(context),
+    icon: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
+    label: Text(
+      '退出球隊',
+      style: TextStyle(color: Theme.of(context).colorScheme.error),
+    ),
   );
 }
 
@@ -288,50 +456,6 @@ class _InfoChip extends StatelessWidget {
         Icon(icon, size: 20, color: Colors.grey[700]),
         const SizedBox(width: 8),
         Text(label),
-      ],
-    );
-  }
-}
-
-class _AdminTools extends StatelessWidget {
-  final String groupId;
-  const _AdminTools({required this.groupId});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '管理員功能',
-          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-            color: Theme.of(context).colorScheme.primary,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  context.push('/group/$groupId/create-event');
-                },
-                icon: const Icon(Icons.calendar_today),
-                label: const Text('建立活動'),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  context.push('/group/$groupId/members');
-                },
-                icon: const Icon(Icons.manage_accounts),
-                label: const Text('查看成員'),
-              ),
-            ),
-          ],
-        ),
       ],
     );
   }
