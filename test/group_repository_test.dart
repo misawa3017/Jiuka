@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiuka/features/events/models/event_model.dart';
 import 'package:jiuka/features/groups/models/group_model.dart';
+import 'package:jiuka/features/groups/models/season_model.dart';
 import 'package:jiuka/features/groups/models/venue_model.dart';
 import 'package:jiuka/features/groups/repositories/group_repository.dart';
 import 'package:mocktail/mocktail.dart';
@@ -53,6 +54,53 @@ void main() {
     final legacy = Venue.fromMap({'name': 'x'}, 'old');
     expect(legacy.costMode, CostMode.perPerson);
     expect(legacy.maxPlayers, 10);
+  });
+
+  Season season({List<String> members = const ['a', 'b']}) => Season(
+    id: 'q1',
+    name: '2027 Q1 週三夜',
+    venueId: 'v',
+    venueName: '三重運動中心 3F',
+    city: '新北市',
+    district: '新北市三重區',
+    startDate: '2027-01-06',
+    endDate: '2027-03-31',
+    dayOfWeek: 3,
+    startTime: '20:00',
+    endTime: '22:00',
+    capacity: 12,
+    totalRent: 28800,
+    feePerMember: 3300,
+    dropInFee: 150,
+    organizerId: 'a',
+    skipDates: const ['2027-02-10'],
+    memberIds: members,
+    paidMemberIds: const ['a'],
+  );
+
+  test('季租：算出每週打球日（扣掉停打日）、季費參考與已收季費', () {
+    final q1 = season();
+    final dates = q1.playDates;
+    // 2027/1/6 到 3/31 共 13 個週三，扣掉 2/10 停打。
+    expect(dates.length, 12);
+    expect(dates.first, DateTime(2027, 1, 6));
+    expect(dates.last, DateTime(2027, 3, 31));
+    expect(dates.every((d) => d.weekday == DateTime.wednesday), isTrue);
+    expect(dates.contains(DateTime(2027, 2, 10)), isFalse);
+    expect(q1.suggestedFee, 14400);
+    expect(q1.collectedFees, 3300);
+    expect(season(members: const []).suggestedFee, isNull);
+    expect(q1.weekdayLabel, '週三');
+  });
+
+  test('季租資料往返；舊資料或格式錯誤時有安全預設值', () {
+    final restored = Season.fromMap(season().toMap(), 'q1');
+    expect(restored.toMap(), season().toMap());
+    final broken = Season.fromMap({'dayOfWeek': 9, 'dropInMode': 'x'}, 'x');
+    expect(broken.dayOfWeek, 7);
+    expect(broken.dropInMode, 'public');
+    expect(broken.playDates, isEmpty);
+    expect(season().copyWith(active: false).active, isFalse);
   });
 
   group('球隊管理操作寫入的內容', () {
@@ -156,6 +204,21 @@ void main() {
       expect(writes[newRef]!['name'], '新莊體育館');
       expect(writes[existingRef]!['cost'], 180);
       expect(writes[newRef]!.containsKey('id'), isFalse);
+    });
+
+    test('季租：只更新指定的欄位，其他設定不動', () async {
+      final seasons = MockCollection();
+      final seasonRef = MockDocument();
+      Map<Object, Object?>? written;
+      when(() => groupRef.collection('seasons')).thenReturn(seasons);
+      when(() => seasons.doc('q1')).thenReturn(seasonRef);
+      when(() => seasonRef.update(any())).thenAnswer((invocation) async {
+        written = invocation.positionalArguments.first as Map<Object, Object?>;
+      });
+      await repository.updateSeason('g', 'q1', paidMemberIds: ['a', 'b']);
+      expect(written, {
+        'paidMemberIds': ['a', 'b'],
+      });
     });
 
     test('任免幹部與轉移隊長只改對應欄位', () async {

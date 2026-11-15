@@ -206,6 +206,65 @@ service cloud.firestore {
         allow delete: if googleUser() && isGroupManager(groupData());
       }
 
+      // 季租：隊員可讀，隊長與幹部可新增、修改、刪除。
+      // lastCreatedFor（排程最後開到哪一天）只由 Cloud Function 寫入。
+      match /seasons/{seasonId} {
+        allow get, list: if googleUser() && request.auth.uid in groupData().memberIds;
+        allow create: if googleUser()
+          && isGroupManager(groupData())
+          && validSeason(request.resource.data)
+          && request.resource.data.lastCreatedFor == '';
+        allow update: if googleUser()
+          && isGroupManager(groupData())
+          && validSeason(request.resource.data)
+          && request.resource.data.lastCreatedFor == resource.data.lastCreatedFor;
+        allow delete: if googleUser() && isGroupManager(groupData());
+
+        function validSeason(season) {
+          let group = groupData();
+          return season.keys().hasAll(['name', 'venueId', 'venueName', 'city', 'district',
+              'startDate', 'endDate', 'dayOfWeek', 'startTime', 'endTime', 'capacity',
+              'totalRent', 'feePerMember', 'dropInFee', 'dropInMode', 'openDaysBefore',
+              'cancelDeadlineHours', 'organizerId', 'skipDates', 'memberIds', 'paidMemberIds',
+              'active', 'lastCreatedFor'])
+            && season.keys().hasOnly(['name', 'venueId', 'venueName', 'city', 'district',
+              'startDate', 'endDate', 'dayOfWeek', 'startTime', 'endTime', 'capacity',
+              'totalRent', 'feePerMember', 'dropInFee', 'dropInMode', 'openDaysBefore',
+              'cancelDeadlineHours', 'organizerId', 'skipDates', 'memberIds', 'paidMemberIds',
+              'active', 'lastCreatedFor'])
+            && trimmedNonEmpty(season.name) && season.name.size() <= 60
+            && season.venueId is string
+            && trimmedNonEmpty(season.venueName)
+            && trimmedNonEmpty(season.city)
+            && season.district.matches(season.city + '.+')
+            && season.startDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+            && season.endDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+            && season.startDate <= season.endDate
+            && season.dayOfWeek is int && season.dayOfWeek >= 1 && season.dayOfWeek <= 7
+            && season.startTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+            && season.endTime.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+            && season.startTime < season.endTime
+            && season.capacity is int && season.capacity >= 2
+            && season.totalRent is int && season.totalRent >= 0
+            && season.feePerMember is int && season.feePerMember >= 0
+            && season.dropInFee is int && season.dropInFee >= 0
+            && season.dropInMode in ['public', 'inviteOnly']
+            && season.openDaysBefore is int && season.openDaysBefore >= 1 && season.openDaysBefore <= 14
+            && season.cancelDeadlineHours in [0, 2, 6, 24]
+            // 負責的主揪必須是隊長或幹部。
+            && (season.organizerId == group.adminId || season.organizerId in group.get('officerIds', []))
+            && season.skipDates is list && season.skipDates.size() <= 30
+            // 季租成員必須是隊員、人數不超過場地容量；已繳季費的人必須是季租成員。
+            && season.memberIds is list
+            && group.memberIds.hasAll(season.memberIds)
+            && season.memberIds.size() <= season.capacity
+            && season.paidMemberIds is list
+            && season.memberIds.hasAll(season.paidMemberIds)
+            && season.active is bool
+            && season.lastCreatedFor is string;
+        }
+      }
+
       function groupData() {
         return get(/databases/$(database)/documents/groups/$(groupId)).data;
       }

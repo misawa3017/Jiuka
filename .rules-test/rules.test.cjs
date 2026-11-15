@@ -460,6 +460,32 @@ async function main() {
     await assertSucceeds(joinTeamPrivate(bob, 'bob', 'Bob 新名', 1));
     await assertFails(joinTeamPrivate(carol, 'carol', 'Carol', 2));
     await assertSucceeds(joinTeamPrivate(carol, 'carol', 'Carol', 2, '135790'));
+
+    // 季租：隊長 bob、幹部 alice；成員 alice、bob。
+    const season = (store, id = 'q1') => doc(store, 'groups', 'group', 'seasons', id);
+    const q1 = {
+      name: '2027 Q1 週三夜', venueId: 'court', venueName: '三重運動中心 3F',
+      city: '新北市', district: '新北市三重區', startDate: '2027-01-06', endDate: '2027-03-31',
+      dayOfWeek: 3, startTime: '20:00', endTime: '22:00', capacity: 12, totalRent: 28800,
+      feePerMember: 3300, dropInFee: 150, dropInMode: 'inviteOnly', openDaysBefore: 7,
+      cancelDeadlineHours: 24, organizerId: 'alice', skipDates: ['2027-02-10'],
+      memberIds: ['alice', 'bob'], paidMemberIds: ['alice'], active: true, lastCreatedFor: '',
+    };
+    await assertSucceeds(setDoc(season(alice), q1));
+    await assertFails(setDoc(season(carol, 'x'), q1));
+    await assertFails(setDoc(season(alice, 'x'), { ...q1, memberIds: ['alice', 'carol'] }));
+    await assertFails(setDoc(season(alice, 'x'), { ...q1, paidMemberIds: ['carol'] }));
+    await assertFails(setDoc(season(alice, 'x'), { ...q1, organizerId: 'carol' }));
+    await assertFails(setDoc(season(alice, 'x'), { ...q1, capacity: 1 }));
+    await assertFails(setDoc(season(alice, 'x'), { ...q1, startDate: '2027-04-01' }));
+    await assertFails(setDoc(season(alice, 'x'), { ...q1, startTime: '22:00', endTime: '20:00' }));
+    await assertFails(setDoc(season(alice, 'x'), { ...q1, dropInMode: 'secret' }));
+    await assertFails(setDoc(season(alice, 'x'), { ...q1, lastCreatedFor: '2027-01-06' }));
+    await assertSucceeds(updateDoc(season(bob), { paidMemberIds: ['alice', 'bob'] }));
+    await assertFails(updateDoc(season(bob), { lastCreatedFor: '2027-01-13' }));
+    await assertSucceeds(getDocs(collection(alice, 'groups', 'group', 'seasons')));
+    await assertFails(getDocs(collection(carol, 'groups', 'group', 'seasons')));
+    await assertFails(deleteDoc(season(carol)));
     console.log('Firestore rules: all allow/deny cases passed');
   } finally {
     await env.cleanup();

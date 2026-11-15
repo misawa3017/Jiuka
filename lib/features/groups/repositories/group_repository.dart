@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/foundation.dart';
 
 import '../models/group_model.dart';
+import '../models/season_model.dart';
 import '../models/venue_model.dart';
 
 /// 待審核的入隊申請（groups/{gid}/joinRequests/{uid}）。
@@ -223,6 +224,54 @@ class GroupRepository extends ChangeNotifier {
 
   Future<void> deleteVenue(String groupId, String venueId) =>
       _venues(groupId).doc(venueId).delete();
+
+  CollectionReference<Map<String, dynamic>> _seasons(String groupId) =>
+      _group(groupId).collection('seasons');
+
+  /// 球隊的季租，最新的在前面。
+  Stream<List<Season>> watchSeasons(String groupId) => _seasons(groupId)
+      .orderBy('startDate', descending: true)
+      .snapshots()
+      .map(
+        (snapshot) => snapshot.docs
+            .map((doc) => Season.fromMap(doc.data(), doc.id))
+            .toList(),
+      );
+
+  Stream<Season?> watchSeason(String groupId, String seasonId) =>
+      _seasons(groupId)
+          .doc(seasonId)
+          .snapshots()
+          .map(
+            (doc) => doc.exists ? Season.fromMap(doc.data()!, doc.id) : null,
+          );
+
+  /// 新增或修改季租（隊長或幹部）；[season.id] 空白時新增，回傳季租 id。
+  Future<String> saveSeason(String groupId, Season season) async {
+    final ref = season.id.isEmpty
+        ? _seasons(groupId).doc()
+        : _seasons(groupId).doc(season.id);
+    await ref.set(season.toMap());
+    return ref.id;
+  }
+
+  /// 只改季租成員、季費繳交、停打日或啟用狀態，其他設定不動。
+  Future<void> updateSeason(
+    String groupId,
+    String seasonId, {
+    List<String>? memberIds,
+    List<String>? paidMemberIds,
+    List<String>? skipDates,
+    bool? active,
+  }) => _seasons(groupId).doc(seasonId).update({
+    'memberIds': ?memberIds,
+    'paidMemberIds': ?paidMemberIds,
+    'skipDates': ?skipDates,
+    'active': ?active,
+  });
+
+  Future<void> deleteSeason(String groupId, String seasonId) =>
+      _seasons(groupId).doc(seasonId).delete();
 
   /// 隊長移除成員，或成員自己退出：一併清掉暱稱與幹部身分。
   Future<void> removeMember(String groupId, String userId) =>

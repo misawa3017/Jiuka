@@ -9,6 +9,8 @@ import '../../features/auth/screens/login_screen.dart';
 import '../../features/groups/screens/create_group_screen.dart';
 import '../../features/groups/screens/group_detail_screen.dart';
 import '../../features/groups/screens/member_management_screen.dart';
+import '../../features/groups/screens/season_form_screen.dart';
+import '../../features/groups/screens/seasons_screen.dart';
 import '../../features/groups/screens/venues_screen.dart';
 import '../../features/events/screens/create_event_screen.dart';
 import '../../features/events/screens/edit_event_screen.dart';
@@ -57,6 +59,34 @@ GoRouter createAppRouter(AuthRepository auth) => GoRouter(
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) =>
           VenuesScreen(groupId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/group/:id/seasons',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) =>
+          SeasonsScreen(groupId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/group/:id/seasons/new',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) =>
+          SeasonFormScreen(groupId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/group/:id/season/:sid',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => SeasonDetailScreen(
+        groupId: state.pathParameters['id']!,
+        seasonId: state.pathParameters['sid']!,
+      ),
+    ),
+    GoRoute(
+      path: '/group/:id/season/:sid/edit',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) => SeasonFormScreen(
+        groupId: state.pathParameters['id']!,
+        seasonId: state.pathParameters['sid']!,
+      ),
     ),
     GoRoute(
       path: '/group/:id/create-event',
