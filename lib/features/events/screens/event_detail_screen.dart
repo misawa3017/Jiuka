@@ -487,17 +487,18 @@ class _EventDetails extends StatelessWidget {
                 ],
                 const Text('有朋友跟你一起來嗎？朋友不用註冊，會和你一起占名額。'),
                 const SizedBox(height: 12),
-                SegmentedButton<int>(
-                  segments: [
+                // 用可換行的選項標籤，手機寬度下文字不會被擠成直排。
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
                     for (var n = 0; n <= EventParticipant.maxGuests; n++)
-                      ButtonSegment(
-                        value: n,
-                        label: Text(n == 0 ? '只有我' : '+$n'),
+                      ChoiceChip(
+                        label: Text(n == 0 ? '只有我' : '+$n 位朋友'),
+                        selected: guests == n,
+                        onSelected: (_) => setState(() => guests = n),
                       ),
                   ],
-                  selected: {guests},
-                  onSelectionChanged: (value) =>
-                      setState(() => guests = value.first),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -1023,7 +1024,7 @@ class _InvitePanelState extends State<_InvitePanel> {
                   child: OutlinedButton.icon(
                     onPressed: code == null ? null : () => _copy(code),
                     icon: const Icon(Icons.copy),
-                    label: const Text('複製連結與邀請碼'),
+                    label: const Text('複製邀請'),
                   ),
                 ),
                 const SizedBox(width: 12),

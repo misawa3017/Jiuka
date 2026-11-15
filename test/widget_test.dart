@@ -7,7 +7,9 @@ import 'package:jiuka/core/router/app_router.dart';
 import 'package:jiuka/features/admin/screens/admin_screen.dart';
 import 'package:jiuka/features/auth/repositories/auth_repository.dart';
 import 'package:jiuka/features/auth/screens/login_screen.dart';
+import 'package:jiuka/features/events/models/event_model.dart';
 import 'package:jiuka/features/events/screens/create_event_screen.dart';
+import 'package:jiuka/features/events/widgets/event_card.dart';
 import 'support/auth_fixture.dart';
 
 void main() {
@@ -134,5 +136,37 @@ void main() {
       ),
     );
     expect(find.text('只有系統管理者可以進入這個頁面。'), findsOneWidget);
+  });
+
+  testWidgets('場次卡片在窄螢幕上標籤會換行，不會超出版面', (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final event = Event(
+      id: 'e',
+      groupId: '',
+      organizerName: '一個名字很長的主揪',
+      title: '週三晚間籃球（熟人場）一個很長的活動名稱',
+      sport: SportType.basketball,
+      district: '新北市三重區',
+      venue: '三重運動中心',
+      startTime: DateTime(2027, 1, 6, 20),
+      endTime: DateTime(2027, 1, 6, 22),
+      cost: 200,
+      maxPlayers: 12,
+      status: EventStatus.inviteOnly,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ListView(
+            children: [EventCard(event: event, badge: '主揪', onTap: () {})],
+          ),
+        ),
+      ),
+    );
+    expect(find.text('限熟人'), findsOneWidget);
+    expect(find.text('主揪'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 }

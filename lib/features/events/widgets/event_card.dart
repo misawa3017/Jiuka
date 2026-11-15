@@ -70,21 +70,23 @@ class EventCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
+                      // 用 Wrap：標籤多或螢幕窄時自動換行，不會擠在一起或超出。
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           _Tag(
                             icon: event.sport.icon,
                             label: event.sport.label,
                             color: scheme.primary,
                           ),
-                          const SizedBox(width: 8),
                           Text(
                             '${time.format(event.startTime)}–${time.format(event.endTime)}',
                             style: theme.textTheme.labelLarge?.copyWith(
                               color: scheme.onSurfaceVariant,
                             ),
                           ),
-                          const Spacer(),
                           if (closed)
                             _Tag(
                               label: event.status == EventStatus.cancelled
@@ -94,14 +96,12 @@ class EventCard extends StatelessWidget {
                             )
                           else if (badge != null)
                             _Tag(label: badge!, color: scheme.tertiary),
-                          if (!closed && event.isInviteOnly) ...[
-                            const SizedBox(width: 6),
+                          if (!closed && event.isInviteOnly)
                             _Tag(
                               icon: Icons.lock_outline,
                               label: '限熟人',
                               color: scheme.secondary,
                             ),
-                          ],
                         ],
                       ),
                       const SizedBox(height: 8),
@@ -171,22 +171,37 @@ class EventCard extends StatelessWidget {
                       const SizedBox(height: 8),
                       Row(
                         children: [
-                          Text(
-                            full
-                                ? '已額滿${event.waitlistCount > 0 ? ' · 候補 ${event.waitlistCount}' : ''}'
-                                : '尚缺 ${event.spotsLeft} 人',
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              color: full ? scheme.tertiary : scheme.primary,
-                              fontWeight: FontWeight.w600,
+                          // 人數可以縮短（太長顯示「…」），費用一定完整顯示。
+                          Expanded(
+                            child: Text.rich(
+                              TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: full
+                                        ? '已額滿${event.waitlistCount > 0 ? ' · 候補 ${event.waitlistCount}' : ''}'
+                                        : '尚缺 ${event.spotsLeft} 人',
+                                    style: theme.textTheme.labelLarge?.copyWith(
+                                      color: full
+                                          ? scheme.tertiary
+                                          : scheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text:
+                                        '  ${event.occupiedCount}/${event.maxPlayers}',
+                                    style: theme.textTheme.labelMedium
+                                        ?.copyWith(
+                                          color: scheme.onSurfaceVariant,
+                                        ),
+                                  ),
+                                ],
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
-                          Text(
-                            '  ${event.occupiedCount}/${event.maxPlayers}',
-                            style: theme.textTheme.labelMedium?.copyWith(
-                              color: scheme.onSurfaceVariant,
-                            ),
-                          ),
-                          const Spacer(),
+                          const SizedBox(width: 8),
                           Text(
                             costSummary(event, joining: !full),
                             style: theme.textTheme.titleSmall?.copyWith(
