@@ -8,6 +8,8 @@ import '../../../components/content_width.dart';
 import '../../../components/district_picker.dart';
 import '../../../core/data/taiwan_districts.dart';
 import '../../auth/repositories/auth_repository.dart';
+import '../../groups/models/venue_model.dart';
+import '../../groups/repositories/group_repository.dart';
 import '../models/event_model.dart';
 import '../repositories/event_repository.dart';
 import '../widgets/event_card.dart';
@@ -48,6 +50,22 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   String? _error;
 
   bool get _isEditing => widget.initialEvent != null;
+  bool get _isTeamEvent => widget.groupId.isNotEmpty;
+
+  /// 球隊的常用場地（開球隊場次時才載入）。
+  late final Stream<List<Venue>>? _venues = _isTeamEvent && !_isEditing
+      ? context.read<GroupRepository>().watchVenues(widget.groupId)
+      : null;
+
+  /// 選了常用場地就帶入地點、地區、費用與名額。
+  void _applyVenue(Venue venue) => setState(() {
+    _venueController.text = venue.name;
+    _city = cityOfDistrict(venue.district);
+    _area = areaOfDistrict(venue.district);
+    _costMode = venue.costMode;
+    _costController.text = '${venue.cost}';
+    _maxPlayersController.text = '${venue.maxPlayers}';
+  });
 
   @override
   void initState() {
@@ -284,6 +302,34 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                     title: '基本資訊',
                     icon: Icons.sports_outlined,
                     children: [
+                      if (_venues case final venues?)
+                        StreamBuilder<List<Venue>>(
+                          stream: venues,
+                          builder: (context, snapshot) {
+                            final list = snapshot.data ?? const <Venue>[];
+                            if (list.isEmpty) return const SizedBox.shrink();
+                            return DropdownButtonFormField<Venue>(
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: '從常用場地帶入',
+                                prefixIcon: Icon(Icons.stadium_outlined),
+                              ),
+                              items: [
+                                for (final venue in list)
+                                  DropdownMenuItem(
+                                    value: venue,
+                                    child: Text(
+                                      '${venue.name}（${venue.costLabel}）',
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                              ],
+                              onChanged: (venue) {
+                                if (venue != null) _applyVenue(venue);
+                              },
+                            );
+                          },
+                        ),
                       TextFormField(
                         controller: _titleController,
                         maxLength: Event.maxTitleLength,
@@ -497,10 +543,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                       children: [
                         SwitchListTile(
                           contentPadding: EdgeInsets.zero,
-                          title: const Text('先開放給熟人'),
-                          subtitle: const Text(
-                            '場次不會出現在首頁，熟人要用連結＋邀請碼報名；'
-                            '熟人報好後，再到場次頁按「開放公開報名」。',
+                          title: Text(_isTeamEvent ? '先開放給隊員與熟人' : '先開放給熟人'),
+                          subtitle: Text(
+                            _isTeamEvent
+                                ? '場次不會出現在首頁；隊員可直接報名，其他熟人要用連結＋邀請碼。'
+                                      '報好後再到場次頁按「開放公開報名」。'
+                                : '場次不會出現在首頁，熟人要用連結＋邀請碼報名；'
+                                      '熟人報好後，再到場次頁按「開放公開報名」。',
                           ),
                           value: _inviteOnly,
                           onChanged: (value) =>

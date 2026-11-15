@@ -9,6 +9,7 @@ import '../../features/auth/screens/login_screen.dart';
 import '../../features/groups/screens/create_group_screen.dart';
 import '../../features/groups/screens/group_detail_screen.dart';
 import '../../features/groups/screens/member_management_screen.dart';
+import '../../features/groups/screens/venues_screen.dart';
 import '../../features/events/screens/create_event_screen.dart';
 import '../../features/events/screens/edit_event_screen.dart';
 import '../../features/events/screens/event_detail_screen.dart';
@@ -50,6 +51,12 @@ GoRouter createAppRouter(AuthRepository auth) => GoRouter(
       parentNavigatorKey: rootNavigatorKey,
       builder: (context, state) =>
           MemberManagementScreen(groupId: state.pathParameters['id']!),
+    ),
+    GoRoute(
+      path: '/group/:id/venues',
+      parentNavigatorKey: rootNavigatorKey,
+      builder: (context, state) =>
+          VenuesScreen(groupId: state.pathParameters['id']!),
     ),
     GoRoute(
       path: '/group/:id/create-event',

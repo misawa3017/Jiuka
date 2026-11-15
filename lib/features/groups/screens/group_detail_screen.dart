@@ -268,6 +268,11 @@ class _ManagerTools extends StatelessWidget {
             ),
           ],
         ),
+        OutlinedButton.icon(
+          onPressed: () => context.push('/group/${group.id}/venues'),
+          icon: const Icon(Icons.stadium_outlined),
+          label: const Text('常用場地'),
+        ),
         if (!captain) _LeaveButton(group: group, userId: userId),
       ],
     );
@@ -290,6 +295,11 @@ class _MemberTools extends StatelessWidget {
           onPressed: () => context.push('/group/${group.id}/members'),
           icon: const Icon(Icons.groups_outlined),
           label: const Text('查看成員'),
+        ),
+        OutlinedButton.icon(
+          onPressed: () => context.push('/group/${group.id}/venues'),
+          icon: const Icon(Icons.stadium_outlined),
+          label: const Text('常用場地'),
         ),
         _LeaveButton(group: group, userId: userId),
       ],

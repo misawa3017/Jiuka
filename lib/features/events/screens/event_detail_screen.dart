@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 
 import '../../../components/ad_banner_widget.dart';
 import '../../auth/repositories/auth_repository.dart';
+import '../../groups/repositories/group_repository.dart';
 import '../models/event_model.dart';
 import '../repositories/event_repository.dart';
 import '../widgets/event_card.dart';
@@ -219,6 +220,8 @@ class _EventDetails extends StatelessWidget {
                     icon: Icons.lock_outline,
                     text: canManage
                         ? '限熟人中：場次不在首頁，熟人要用連結＋邀請碼報名'
+                        : _isTeamMember(context)
+                        ? '目前只開放隊員與熟人報名；你是隊員，可以直接報名'
                         : '目前只開放主揪邀請的熟人報名，需要邀請碼',
                     color: scheme.secondary,
                   ),
@@ -455,7 +458,20 @@ class _EventDetails extends StatelessWidget {
   }
 
   /// 報名前選擇同行朋友人數（限熟人場次另外輸入邀請碼），並預告整組會進正取還是候補。
+  /// 目前使用者是不是這個球隊場次的隊員（限熟人階段可免邀請碼）。
+  bool _isTeamMember(BuildContext context) {
+    if (event.groupId.isEmpty || userId == null) return false;
+    final group = context
+        .read<GroupRepository>()
+        .groups
+        .where((g) => g.id == event.groupId)
+        .firstOrNull;
+    return group?.isMember(userId) ?? false;
+  }
+
   Future<(int, String?)?> _pickGuests(BuildContext context) {
+    // 球隊場次的隊員不用輸入邀請碼。
+    final needsCode = event.isInviteOnly && !_isTeamMember(context);
     var guests = 0;
     // 不在這裡 dispose：對話框關閉動畫期間 TextField 仍在使用。
     final codeController = TextEditingController();
@@ -471,7 +487,7 @@ class _EventDetails extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (event.isInviteOnly) ...[
+                if (needsCode) ...[
                   TextField(
                     controller: codeController,
                     autofocus: true,
@@ -517,12 +533,12 @@ class _EventDetails extends StatelessWidget {
               ),
               FilledButton(
                 onPressed:
-                    event.isInviteOnly &&
+                    needsCode &&
                         !RegExp(r'^\d{6}$').hasMatch(codeController.text.trim())
                     ? null
                     : () => Navigator.pop(dialogContext, (
                         guests,
-                        event.isInviteOnly ? codeController.text.trim() : null,
+                        needsCode ? codeController.text.trim() : null,
                       )),
                 child: Text(fits ? '確認報名' : '加入候補'),
               ),

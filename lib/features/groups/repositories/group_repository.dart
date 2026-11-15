@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/foundation.dart';
 
 import '../models/group_model.dart';
+import '../models/venue_model.dart';
 
 /// 待審核的入隊申請（groups/{gid}/joinRequests/{uid}）。
 class JoinRequest {
@@ -198,6 +199,30 @@ class GroupRepository extends ChangeNotifier {
       'approve': approve,
     });
   }
+
+  CollectionReference<Map<String, dynamic>> _venues(String groupId) =>
+      _group(groupId).collection('venues');
+
+  /// 常用場地（隊員可看），依名稱排序。
+  Stream<List<Venue>> watchVenues(String groupId) => _venues(groupId)
+      .orderBy('name')
+      .snapshots()
+      .map(
+        (snapshot) => snapshot.docs
+            .map((doc) => Venue.fromMap(doc.data(), doc.id))
+            .toList(),
+      );
+
+  /// 新增或修改常用場地（隊長或幹部）；[venue.id] 空白時新增。
+  Future<void> saveVenue(String groupId, Venue venue) {
+    final ref = venue.id.isEmpty
+        ? _venues(groupId).doc()
+        : _venues(groupId).doc(venue.id);
+    return ref.set(venue.toMap());
+  }
+
+  Future<void> deleteVenue(String groupId, String venueId) =>
+      _venues(groupId).doc(venueId).delete();
 
   /// 隊長移除成員，或成員自己退出：一併清掉暱稱與幹部身分。
   Future<void> removeMember(String groupId, String userId) =>

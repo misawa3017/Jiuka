@@ -422,6 +422,44 @@ async function main() {
     await assertFails(publish(alice));
     // 公開後不需要邀請碼。
     await assertSucceeds(joinPrivate(carol, 'carol', 'Carol', undefined, 2));
+
+    // 常用場地：此時球隊隊長是 bob、幹部是 alice、成員只剩 alice 與 bob。
+    const venue = (store, id = 'court') => doc(store, 'groups', 'group', 'venues', id);
+    const court = {
+      name: '三重運動中心 3F', city: '新北市', district: '新北市三重區',
+      costMode: 'totalVenue', cost: 2400, maxPlayers: 12, notes: '停車：地下室',
+    };
+    await assertSucceeds(setDoc(venue(alice), court));
+    await assertSucceeds(setDoc(venue(bob, 'court2'), { ...court, name: '新莊體育館' }));
+    await assertFails(setDoc(venue(carol, 'x'), court));
+    await assertFails(setDoc(venue(alice, 'bad'), { ...court, district: '臺北市大安區' }));
+    await assertFails(setDoc(venue(alice, 'bad'), { ...court, cost: -1 }));
+    await assertFails(setDoc(venue(alice, 'bad'), { ...court, extra: true }));
+    await assertSucceeds(getDocs(collection(alice, 'groups', 'group', 'venues')));
+    await assertFails(getDocs(collection(carol, 'groups', 'group', 'venues')));
+    await assertFails(deleteDoc(venue(carol, 'court2')));
+    await assertSucceeds(deleteDoc(venue(bob, 'court2')));
+
+    // 球隊的限熟人場次：隊員免邀請碼，非隊員仍要邀請碼。
+    const teamPrivate = (store) => doc(store, 'events', 'team-private');
+    const createTeamPrivate = writeBatch(alice);
+    createTeamPrivate.set(teamPrivate(alice), event({
+      organizerName: 'Alice 主揪', status: 3, maxPlayers: 8, groupId: 'group',
+    }));
+    createTeamPrivate.set(doc(alice, 'events', 'team-private', 'private', 'invite'), { code: '135790' });
+    await assertSucceeds(createTeamPrivate.commit());
+    const joinTeamPrivate = async (store, uid, name, value, code) => {
+      const batch = writeBatch(store);
+      batch.update(teamPrivate(store), { attendeeCount: value });
+      batch.set(doc(store, 'events', 'team-private', 'participants', uid), {
+        eventId: 'team-private', userId: uid, status: 'attending', joinedAt: serverTimestamp(),
+        displayName: name, guests: 0, ...(code === undefined ? {} : { inviteCode: code }),
+      });
+      await batch.commit();
+    };
+    await assertSucceeds(joinTeamPrivate(bob, 'bob', 'Bob 新名', 1));
+    await assertFails(joinTeamPrivate(carol, 'carol', 'Carol', 2));
+    await assertSucceeds(joinTeamPrivate(carol, 'carol', 'Carol', 2, '135790'));
     console.log('Firestore rules: all allow/deny cases passed');
   } finally {
     await env.cleanup();

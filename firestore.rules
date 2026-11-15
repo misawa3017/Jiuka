@@ -185,6 +185,31 @@ service cloud.firestore {
           && officersBefore().hasAll(officersAfter());
       }
 
+      // 常用場地：隊員可讀，隊長與幹部可新增、修改、刪除。
+      match /venues/{venueId} {
+        allow get, list: if googleUser() && request.auth.uid in groupData().memberIds;
+        allow create, update: if googleUser()
+          && isGroupManager(groupData())
+          && request.resource.data.keys().hasAll(['name', 'city', 'district', 'costMode', 'cost', 'maxPlayers', 'notes'])
+          && request.resource.data.keys().hasOnly(['name', 'city', 'district', 'costMode', 'cost', 'maxPlayers', 'notes'])
+          && trimmedNonEmpty(request.resource.data.name)
+          && request.resource.data.name.size() <= 60
+          && trimmedNonEmpty(request.resource.data.city)
+          && request.resource.data.district.matches(request.resource.data.city + '.+')
+          && request.resource.data.costMode in ['perPerson', 'totalVenue']
+          && request.resource.data.cost is int
+          && request.resource.data.cost >= 0
+          && request.resource.data.maxPlayers is int
+          && request.resource.data.maxPlayers >= 2
+          && trimmedString(request.resource.data.notes)
+          && request.resource.data.notes.size() <= 500;
+        allow delete: if googleUser() && isGroupManager(groupData());
+      }
+
+      function groupData() {
+        return get(/databases/$(database)/documents/groups/$(groupId)).data;
+      }
+
       // 入隊申請：本人建立或撤回，隊長可以讀取；核准或拒絕由 Cloud Function 處理。
       match /joinRequests/{uid} {
         allow get: if ownAccount(uid) || groupCaptain();
@@ -371,9 +396,11 @@ service cloud.firestore {
         let after = getAfter(eventPath()).data;
         let party = 1 + request.resource.data.guests;
         return event.status in [0, 3]
-          // 限熟人階段要輸入正確邀請碼。
+          // 限熟人階段：輸入正確邀請碼，或是這個球隊場次的隊員（免邀請碼）。
           && (event.status == 0
-            || request.resource.data.get('inviteCode', '') == get(invitePath()).data.code)
+            || request.resource.data.get('inviteCode', '') == get(invitePath()).data.code
+            || event.groupId != ''
+              && uid in get(/databases/$(database)/documents/groups/$(event.groupId)).data.memberIds)
           && event.startTime is timestamp
           && event.endTime is timestamp
           && event.startTime > request.time

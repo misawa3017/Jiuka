@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:jiuka/features/events/models/event_model.dart';
 import 'package:jiuka/features/groups/models/group_model.dart';
+import 'package:jiuka/features/groups/models/venue_model.dart';
 import 'package:jiuka/features/groups/repositories/group_repository.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -31,6 +33,26 @@ void main() {
       ).toMap()['officerIds'],
       isEmpty,
     );
+  });
+
+  test('常用場地資料往返，缺欄位時有預設值', () {
+    const venue = Venue(
+      id: 'v',
+      name: '三重運動中心 3F',
+      city: '新北市',
+      district: '新北市三重區',
+      costMode: CostMode.totalVenue,
+      cost: 2400,
+      maxPlayers: 12,
+      notes: '停車：地下室',
+    );
+    final restored = Venue.fromMap(venue.toMap(), 'v');
+    expect(restored.name, venue.name);
+    expect(restored.costMode, CostMode.totalVenue);
+    expect(restored.costLabel, '場租 2400 元');
+    final legacy = Venue.fromMap({'name': 'x'}, 'old');
+    expect(legacy.costMode, CostMode.perPerson);
+    expect(legacy.maxPlayers, 10);
   });
 
   group('球隊管理操作寫入的內容', () {
@@ -103,6 +125,37 @@ void main() {
         updates.single.keys,
         unorderedEquals(['memberIds', 'memberNames.u', 'officerIds']),
       );
+    });
+
+    test('常用場地：沒有 id 時新增，有 id 時覆寫同一筆', () async {
+      final venues = MockCollection();
+      final newRef = MockDocument();
+      final existingRef = MockDocument();
+      final writes = <MockDocument, Map<String, dynamic>>{};
+      when(() => groupRef.collection('venues')).thenReturn(venues);
+      when(() => venues.doc()).thenReturn(newRef);
+      when(() => venues.doc('v1')).thenReturn(existingRef);
+      for (final ref in [newRef, existingRef]) {
+        when(() => ref.set(any())).thenAnswer((invocation) async {
+          writes[ref] = Map<String, dynamic>.from(
+            invocation.positionalArguments.first as Map,
+          );
+        });
+      }
+      const venue = Venue(
+        id: '',
+        name: '新莊體育館',
+        city: '新北市',
+        district: '新北市新莊區',
+        costMode: CostMode.perPerson,
+        cost: 180,
+        maxPlayers: 10,
+      );
+      await repository.saveVenue('g', venue);
+      await repository.saveVenue('g', Venue.fromMap(venue.toMap(), 'v1'));
+      expect(writes[newRef]!['name'], '新莊體育館');
+      expect(writes[existingRef]!['cost'], 180);
+      expect(writes[newRef]!.containsKey('id'), isFalse);
     });
 
     test('任免幹部與轉移隊長只改對應欄位', () async {
