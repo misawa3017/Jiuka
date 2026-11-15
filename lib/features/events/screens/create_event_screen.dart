@@ -39,6 +39,8 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
   CostMode _costMode = CostMode.perPerson;
   bool _organizerPlaying = true;
   int _cancelDeadlineHours = 0;
+  // 只在發布時可選；之後由主揪在詳情頁開放公開報名。
+  bool _inviteOnly = false;
   DateTime _selectedDate = DateTime.now().add(const Duration(days: 1));
   TimeOfDay _startTime = const TimeOfDay(hour: 20, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 22, minute: 0);
@@ -177,9 +179,12 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
         if (mounted) context.pop();
         return;
       }
+      final eventId = const Uuid().v4();
       await repository.createEvent(
+        inviteCode: _inviteOnly ? EventRepository.generateInviteCode() : null,
         Event(
-          id: const Uuid().v4(),
+          id: eventId,
+          status: _inviteOnly ? EventStatus.inviteOnly : EventStatus.open,
           groupId: widget.groupId,
           organizerId: organizer.id,
           organizerName: organizer.name,
@@ -199,7 +204,13 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
           cancelDeadlineHours: _cancelDeadlineHours,
         ),
       );
-      if (mounted) context.pop();
+      if (!mounted) return;
+      // 限熟人場次直接進詳情頁，主揪才拿得到連結與邀請碼。
+      if (_inviteOnly) {
+        context.pushReplacement('/event/$eventId');
+      } else {
+        context.pop();
+      }
     } on FirebaseFunctionsException catch (error) {
       // 後端驗證失敗（例如名額低於正取人數）時，直接顯示伺服器的說明。
       if (mounted) {
@@ -478,6 +489,26 @@ class _CreateEventScreenState extends State<CreateEventScreen> {
                       ),
                     ],
                   ),
+                  if (!_isEditing) ...[
+                    const SizedBox(height: 12),
+                    SectionCard(
+                      title: '報名對象',
+                      icon: Icons.lock_outline,
+                      children: [
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('先開放給熟人'),
+                          subtitle: const Text(
+                            '場次不會出現在首頁，熟人要用連結＋邀請碼報名；'
+                            '熟人報好後，再到場次頁按「開放公開報名」。',
+                          ),
+                          value: _inviteOnly,
+                          onChanged: (value) =>
+                              setState(() => _inviteOnly = value),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   SectionCard(
                     title: '取消規則',

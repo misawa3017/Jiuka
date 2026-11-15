@@ -178,7 +178,9 @@ service cloud.firestore {
         && request.resource.data.existingPlayers <= request.resource.data.maxPlayers
         && request.resource.data.attendeeCount == 0
         && request.resource.data.waitlistCount == 0
-        && request.resource.data.status == 0
+        // 0 = 公開報名；3 = 限熟人（需在同一批寫入建立邀請碼）。
+        && (request.resource.data.status == 0
+          || request.resource.data.status == 3 && existsAfter(invitePath()))
         && request.resource.data.isRecurring == false
         // 球友自行取消的期限：開始前幾小時，0 表示不限。
         && request.resource.data.cancelDeadlineHours in [0, 2, 6, 24];
@@ -191,6 +193,7 @@ service cloud.firestore {
                 && !exists(participantPath(request.auth.uid))
                 && (joinAttendee() || joinWaitlisted())
               || organizerCancel()
+              || organizerPublish()
             )
           // 改暱稱時同步自己發布過的場次（含已結束、已取消），所以不要求場次仍開放。
           || organizerRename()
@@ -198,6 +201,19 @@ service cloud.firestore {
           || organizerConfirmCost()
         );
       allow delete: if false;
+      // 邀請碼：只有主揪與管理者能讀；建立場次時一併建立，之後不能修改或刪除。
+      match /private/{docId} {
+        allow get: if googleUser() && (eventOrganizer(request.auth.uid) || isAdmin());
+        allow create: if googleUser()
+          && docId == 'invite'
+          && getAfter(eventPath()).data.organizerId == request.auth.uid
+          && getAfter(eventPath()).data.status == 3
+          && request.resource.data.keys().hasOnly(['code'])
+          && request.resource.data.code is string
+          && request.resource.data.code.matches('^[0-9]{6}$');
+        allow list, update, delete: if false;
+      }
+
       match /participants/{participantId} {
         allow get: if googleUser()
           && (request.auth.uid == participantId || eventOrganizer(request.auth.uid) || isAdmin());
@@ -205,7 +221,7 @@ service cloud.firestore {
         allow create: if googleUser()
           && request.auth.uid == participantId
           && request.resource.data.keys().hasAll(['eventId', 'userId', 'status', 'joinedAt', 'displayName', 'guests'])
-          && request.resource.data.keys().hasOnly(['eventId', 'userId', 'status', 'joinedAt', 'displayName', 'guests'])
+          && request.resource.data.keys().hasOnly(['eventId', 'userId', 'status', 'joinedAt', 'displayName', 'guests', 'inviteCode'])
           // 同行朋友 0～3 人，與本人一起占名額。
           && request.resource.data.guests is int
           && request.resource.data.guests >= 0
@@ -244,6 +260,10 @@ service cloud.firestore {
         return /databases/$(database)/documents/events/$(eventId);
       }
 
+      function invitePath() {
+        return /databases/$(database)/documents/events/$(eventId)/private/invite;
+      }
+
       function participantPath(uid) {
         return /databases/$(database)/documents/events/$(eventId)/participants/$(uid);
       }
@@ -253,7 +273,7 @@ service cloud.firestore {
       }
 
       function eventOpen() {
-        return resource.data.status == 0
+        return resource.data.status in [0, 3]
           && resource.data.startTime is timestamp
           && resource.data.endTime is timestamp
           && resource.data.startTime > request.time
@@ -273,7 +293,10 @@ service cloud.firestore {
         let event = get(eventPath()).data;
         let after = getAfter(eventPath()).data;
         let party = 1 + request.resource.data.guests;
-        return event.status == 0
+        return event.status in [0, 3]
+          // 限熟人階段要輸入正確邀請碼。
+          && (event.status == 0
+            || request.resource.data.get('inviteCode', '') == get(invitePath()).data.code)
           && event.startTime is timestamp
           && event.endTime is timestamp
           && event.startTime > request.time
@@ -300,6 +323,15 @@ service cloud.firestore {
           && onlyCounter(['status', 'cancelledAt'])
           && request.resource.data.status == 2
           && request.resource.data.cancelledAt == request.time;
+      }
+
+      // 主揪或管理者把「限熟人」場次開放公開報名。
+      function organizerPublish() {
+        return (resource.data.organizerId == request.auth.uid || isAdmin())
+          && resource.data.status == 3
+          && onlyCounter(['status', 'publishedAt'])
+          && request.resource.data.status == 0
+          && request.resource.data.publishedAt == request.time;
       }
 
       function organizerConfirmCost() {

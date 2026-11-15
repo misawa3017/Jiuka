@@ -119,6 +119,7 @@ void main() {
       scrollable: find.byType(Scrollable).first,
     );
     expect(find.text('費用'), findsOneWidget);
+    expect(find.text('先開放給熟人'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -213,6 +214,14 @@ class _EventDetails extends StatelessWidget {
                     text: '此場次已不開放報名',
                     color: scheme.outline,
                   ),
+                if (event.isInviteOnly)
+                  _Banner(
+                    icon: Icons.lock_outline,
+                    text: canManage
+                        ? '限熟人中：場次不在首頁，熟人要用連結＋邀請碼報名'
+                        : '目前只開放主揪邀請的熟人報名，需要邀請碼',
+                    color: scheme.secondary,
+                  ),
                 if (event.updatedAt case final updatedAt?)
                   _Banner(
                     icon: Icons.update,
@@ -372,6 +381,8 @@ class _EventDetails extends StatelessWidget {
                     title: isOrganizer ? '主揪管理' : '管理者操作',
                     icon: Icons.manage_accounts_outlined,
                     children: [
+                      if (event.isInviteOnly)
+                        _InvitePanel(event: event, repository: repository),
                       _OrganizerActions(event: event, repository: repository),
                     ],
                   ),
@@ -443,10 +454,12 @@ class _EventDetails extends StatelessWidget {
     );
   }
 
-  /// 報名前選擇同行朋友人數，並預告整組會進正取還是候補。
-  Future<int?> _pickGuests(BuildContext context) {
+  /// 報名前選擇同行朋友人數（限熟人場次另外輸入邀請碼），並預告整組會進正取還是候補。
+  Future<(int, String?)?> _pickGuests(BuildContext context) {
     var guests = 0;
-    return showDialog<int>(
+    // 不在這裡 dispose：對話框關閉動畫期間 TextField 仍在使用。
+    final codeController = TextEditingController();
+    return showDialog<(int, String?)>(
       context: context,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setState) {
@@ -458,6 +471,20 @@ class _EventDetails extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (event.isInviteOnly) ...[
+                  TextField(
+                    controller: codeController,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    decoration: const InputDecoration(
+                      labelText: '邀請碼',
+                      helperText: '目前只開放熟人報名，請輸入主揪給你的 6 位數邀請碼',
+                    ),
+                    onChanged: (_) => setState(() {}),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 const Text('有朋友跟你一起來嗎？朋友不用註冊，會和你一起占名額。'),
                 const SizedBox(height: 12),
                 SegmentedButton<int>(
@@ -488,7 +515,14 @@ class _EventDetails extends StatelessWidget {
                 child: const Text('返回'),
               ),
               FilledButton(
-                onPressed: () => Navigator.pop(dialogContext, guests),
+                onPressed:
+                    event.isInviteOnly &&
+                        !RegExp(r'^\d{6}$').hasMatch(codeController.text.trim())
+                    ? null
+                    : () => Navigator.pop(dialogContext, (
+                        guests,
+                        event.isInviteOnly ? codeController.text.trim() : null,
+                      )),
                 child: Text(fits ? '確認報名' : '加入候補'),
               ),
             ],
@@ -693,8 +727,9 @@ class _EventDetails extends StatelessWidget {
     }
     return FilledButton.icon(
       onPressed: () async {
-        final guests = await _pickGuests(context);
-        if (guests == null || !context.mounted) return;
+        final choice = await _pickGuests(context);
+        if (choice == null || !context.mounted) return;
+        final (guests, inviteCode) = choice;
         try {
           final user = context.read<AuthRepository>().currentUser!;
           await repository.joinEvent(
@@ -702,7 +737,19 @@ class _EventDetails extends StatelessWidget {
             user.id,
             user.name,
             guests: guests,
+            inviteCode: inviteCode,
           );
+        } on FirebaseException catch (error) {
+          if (context.mounted) {
+            // 限熟人場次被拒絕，最常見的原因是邀請碼錯誤。
+            final message =
+                event.isInviteOnly && error.code == 'permission-denied'
+                ? '邀請碼不正確，請向主揪確認。'
+                : '報名失敗，請稍後重試。';
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(SnackBar(content: Text(message)));
+          }
         } catch (_) {
           if (context.mounted) {
             ScaffoldMessenger.of(
@@ -861,6 +908,142 @@ class _StatCard extends StatelessWidget {
   }
 }
 
+/// 限熟人場次：顯示邀請碼、複製「連結＋邀請碼」、開放公開報名。
+class _InvitePanel extends StatefulWidget {
+  final Event event;
+  final EventRepository repository;
+  const _InvitePanel({required this.event, required this.repository});
+
+  @override
+  State<_InvitePanel> createState() => _InvitePanelState();
+}
+
+class _InvitePanelState extends State<_InvitePanel> {
+  late final Future<String?> _code = widget.repository.getInviteCode(
+    widget.event.id,
+  );
+  bool _publishing = false;
+
+  Future<void> _copy(String code) async {
+    final link = Uri.base.replace(
+      path: '/event/${widget.event.id}',
+      query: '',
+      fragment: '',
+    );
+    final text =
+        '${widget.event.displayTitle}\n'
+        '報名連結：$link\n'
+        '邀請碼：$code';
+    try {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('已複製連結與邀請碼，可以貼到群組了。')));
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('無法複製，請手動抄下邀請碼。')));
+      }
+    }
+  }
+
+  Future<void> _publish() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('開放公開報名？'),
+        content: const Text('開放後場次會出現在首頁，任何人都能報名，不再需要邀請碼。這個動作無法改回限熟人。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('返回'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('開放'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => _publishing = true);
+    try {
+      await widget.repository.publishEvent(widget.event.id);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('開放失敗，請稍後重試。')));
+      }
+    } finally {
+      if (mounted) setState(() => _publishing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return FutureBuilder<String?>(
+      future: _code,
+      builder: (context, snapshot) {
+        final code = snapshot.data;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.secondaryContainer,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                children: [
+                  Text('邀請碼', style: theme.textTheme.labelLarge),
+                  const SizedBox(height: 4),
+                  Text(
+                    code ??
+                        (snapshot.connectionState == ConnectionState.waiting
+                            ? '載入中…'
+                            : '無法載入'),
+                    style: theme.textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 6,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: code == null ? null : () => _copy(code),
+                    icon: const Icon(Icons.copy),
+                    label: const Text('複製連結與邀請碼'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _publishing ? null : _publish,
+                    icon: const Icon(Icons.public),
+                    label: Text(_publishing ? '處理中…' : '開放公開報名'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _OrganizerActions extends StatelessWidget {
   final Event event;
   final EventRepository repository;
@@ -979,7 +1162,7 @@ class _OrganizerRoster extends StatelessWidget {
           children: [
             _RosterHeading(
               label: '正取',
-              count: attendees.fold(0, (sum, p) => sum + p.partySize),
+              count: attendees.fold(0, (total, p) => total + p.partySize),
               extra: attendees.isEmpty
                   ? null
                   : '到場 ${attendees.where((p) => p.attended).length}'
@@ -989,7 +1172,7 @@ class _OrganizerRoster extends StatelessWidget {
             const SizedBox(height: 12),
             _RosterHeading(
               label: '候補',
-              count: waitlist.fold(0, (sum, p) => sum + p.partySize),
+              count: waitlist.fold(0, (total, p) => total + p.partySize),
             ),
             _Roster(users: waitlist, onRemove: onRemove),
           ],

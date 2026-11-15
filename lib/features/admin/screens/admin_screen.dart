@@ -36,7 +36,7 @@ class _AdminScreenState extends State<AdminScreen> {
   bool _matches(Event event, DateTime now) => switch (_filter) {
     _AdminFilter.all => true,
     _AdminFilter.upcoming =>
-      event.status == EventStatus.open && event.startTime.isAfter(now),
+      event.isAcceptingSignups && event.startTime.isAfter(now),
     _AdminFilter.past =>
       event.status != EventStatus.cancelled && !event.startTime.isAfter(now),
     _AdminFilter.cancelled => event.status == EventStatus.cancelled,
@@ -66,7 +66,7 @@ class _AdminScreenState extends State<AdminScreen> {
           }
           final now = DateTime.now();
           final upcoming = events.where(
-            (e) => e.status == EventStatus.open && e.startTime.isAfter(now),
+            (e) => e.isAcceptingSignups && e.startTime.isAfter(now),
           );
           final cancelled = events.where(
             (e) => e.status == EventStatus.cancelled,

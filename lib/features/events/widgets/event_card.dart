@@ -47,7 +47,7 @@ class EventCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final closed = event.status != EventStatus.open;
+    final closed = !event.isAcceptingSignups;
     final full = event.isFull;
     final progress = event.maxPlayers == 0
         ? 0.0
@@ -94,6 +94,14 @@ class EventCard extends StatelessWidget {
                             )
                           else if (badge != null)
                             _Tag(label: badge!, color: scheme.tertiary),
+                          if (!closed && event.isInviteOnly) ...[
+                            const SizedBox(width: 6),
+                            _Tag(
+                              icon: Icons.lock_outline,
+                              label: '限熟人',
+                              color: scheme.secondary,
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 8),

@@ -2,7 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/data/taiwan_districts.dart';
 
-enum EventStatus { open, closed, cancelled }
+/// open = 公開報名；inviteOnly = 限熟人（需邀請碼、不出現在首頁）。
+/// 順序就是存進資料庫的數字（0、1、2、3），不能調換。
+enum EventStatus { open, closed, cancelled, inviteOnly }
 
 enum SportType { basketball, badminton }
 
@@ -156,6 +158,12 @@ class Event {
 
   bool get isCostConfirmed => finalCostPerPerson != null;
 
+  bool get isInviteOnly => status == EventStatus.inviteOnly;
+
+  /// 公開報名或限熟人階段都還在接受報名。
+  bool get isAcceptingSignups =>
+      status == EventStatus.open || status == EventStatus.inviteOnly;
+
   /// 正取球友是否已超過自行取消的期限（與 Cloud Function 判斷一致）。
   bool isPastCancelDeadline(DateTime now) =>
       cancelDeadlineHours > 0 &&
@@ -177,7 +185,7 @@ class Event {
   /// 這組人報名會不會進正取：沒有人候補且名額放得下整組（與規則一致）。
   bool fitsParty(int partySize) => waitlistCount == 0 && spotsLeft >= partySize;
   bool canAcceptParticipants(DateTime now) =>
-      status == EventStatus.open &&
+      isAcceptingSignups &&
       startTime.isAfter(now) &&
       endTime.isAfter(startTime);
 

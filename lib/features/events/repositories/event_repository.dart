@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
@@ -54,9 +56,45 @@ class EventRepository extends ChangeNotifier {
     }
   }
 
-  Future<void> createEvent(Event event) async {
+  /// 發布場次。限熟人場次需要 6 位數 [inviteCode]，與場次在同一批寫入建立。
+  Future<void> createEvent(Event event, {String? inviteCode}) async {
     validateEvent(event);
-    await _firestore.collection('events').doc(event.id).set(event.toMap());
+    final eventRef = _firestore.collection('events').doc(event.id);
+    if (!event.isInviteOnly) {
+      await eventRef.set(event.toMap());
+      return;
+    }
+    if (inviteCode == null || !RegExp(r'^\d{6}$').hasMatch(inviteCode)) {
+      throw ArgumentError('邀請碼必須是 6 位數字');
+    }
+    final batch = _firestore.batch()
+      ..set(eventRef, event.toMap())
+      ..set(eventRef.collection('private').doc('invite'), {'code': inviteCode});
+    await batch.commit();
+  }
+
+  /// 產生 6 位數邀請碼。
+  static String generateInviteCode() =>
+      (Random.secure().nextInt(900000) + 100000).toString();
+
+  /// 主揪或管理者讀取邀請碼；其他人沒有權限。
+  Future<String?> getInviteCode(String eventId) async {
+    final snapshot = await _firestore
+        .collection('events')
+        .doc(eventId)
+        .collection('private')
+        .doc('invite')
+        .get();
+    final code = snapshot.data()?['code'];
+    return code is String ? code : null;
+  }
+
+  /// 把限熟人場次開放公開報名，之後會出現在首頁、不需要邀請碼。
+  Future<void> publishEvent(String eventId) async {
+    await _firestore.collection('events').doc(eventId).update({
+      'status': EventStatus.open.index,
+      'publishedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   /// 主揪編輯場次。由 Cloud Function 處理，名額變多時會依序遞補候補。
@@ -290,6 +328,7 @@ class EventRepository extends ChangeNotifier {
     String userId,
     String displayName, {
     int guests = 0,
+    String? inviteCode,
   }) async {
     if (guests < 0 || guests > EventParticipant.maxGuests) {
       throw ArgumentError('同行朋友最多 ${EventParticipant.maxGuests} 人');
@@ -322,6 +361,8 @@ class EventRepository extends ChangeNotifier {
         'joinedAt': FieldValue.serverTimestamp(),
         'displayName': displayName,
         'guests': guests,
+        // 限熟人階段由規則比對邀請碼。
+        if (event.isInviteOnly) 'inviteCode': inviteCode ?? '',
       });
     });
   }

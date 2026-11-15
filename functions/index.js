@@ -105,9 +105,10 @@ async function notify(userIds, notice, eventId) {
   }
 }
 
-/** 場次仍開放且尚未開始。 */
+/** 場次仍開放（公開或限熟人）且尚未開始。 */
 function requireOpen(event, message) {
-  if (event.status !== 0 || event.startTime.toDate() <= new Date()) {
+  // 0 = 公開報名、3 = 限熟人，兩者都算開放中。
+  if (![0, 3].includes(event.status) || event.startTime.toDate() <= new Date()) {
     throw new HttpsError('failed-precondition', message);
   }
 }

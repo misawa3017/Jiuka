@@ -5,6 +5,8 @@ import 'package:jiuka/features/events/models/event_model.dart';
 import 'package:jiuka/features/events/repositories/event_repository.dart';
 import 'support/auth_fixture.dart';
 
+class MockBatch extends Mock implements WriteBatch {}
+
 void main() {
   late MockStore store;
   late MockCollection events;
@@ -157,6 +159,71 @@ void main() {
     expect(written!['finalCostPerPerson'], 250);
     expect(written!['costConfirmedAt'], isA<FieldValue>());
     expect(() => repository.confirmCost('game', -1), throwsArgumentError);
+  });
+
+  group('限熟人場次', () {
+    test('邀請碼是 6 位數字', () {
+      for (var i = 0; i < 20; i++) {
+        expect(
+          EventRepository.generateInviteCode(),
+          matches(RegExp(r'^\d{6}$')),
+        );
+      }
+    });
+
+    test('發布限熟人場次時，場次與邀請碼同一批寫入；邀請碼格式不對不送出', () async {
+      registerFallbackValue(MockDocument());
+      final batch = MockBatch();
+      final privateCollection = MockCollection();
+      final inviteRef = MockDocument();
+      final writes = <DocumentReference, Map<String, dynamic>>{};
+      when(() => store.batch()).thenReturn(batch);
+      when(() => eventRef.collection('private')).thenReturn(privateCollection);
+      when(() => privateCollection.doc('invite')).thenReturn(inviteRef);
+      when(() => batch.set<Map<String, dynamic>>(any(), any())).thenAnswer((
+        invocation,
+      ) {
+        writes[invocation.positionalArguments[0] as DocumentReference] =
+            Map<String, dynamic>.from(invocation.positionalArguments[1] as Map);
+      });
+      when(() => batch.commit()).thenAnswer((_) async {});
+
+      final game = Event.fromMap(
+        eventData,
+        'game',
+      ).copyWith(status: EventStatus.inviteOnly);
+      expect(
+        () => repository.createEvent(game, inviteCode: '1234'),
+        throwsArgumentError,
+      );
+      await repository.createEvent(game, inviteCode: '482913');
+      expect(writes[eventRef]!['status'], 3);
+      expect(writes[inviteRef], {'code': '482913'});
+      verify(() => batch.commit()).called(1);
+    });
+
+    test('報名限熟人場次會帶上邀請碼，公開場次不帶', () async {
+      eventData['status'] = EventStatus.inviteOnly.index;
+      await repository.joinEvent('game', 'first', '小明', inviteCode: '482913');
+      expect(participantData!['inviteCode'], '482913');
+
+      eventData
+        ..['status'] = EventStatus.open.index
+        ..['attendeeCount'] = 0;
+      participantExists = false;
+      await repository.joinEvent('game', 'first', '小明');
+      expect(participantData!.containsKey('inviteCode'), isFalse);
+    });
+
+    test('開放公開報名：狀態改回公開並記錄時間', () async {
+      Map<Object, Object?>? written;
+      when(() => eventRef.update(any())).thenAnswer((invocation) async {
+        written = invocation.positionalArguments.first as Map<Object, Object?>;
+      });
+      await repository.publishEvent('game');
+      expect(written!['status'], EventStatus.open.index);
+      expect(written!['publishedAt'], isA<FieldValue>());
+    });
   });
 
   test('記錄出席與收款只寫入有指定的欄位', () async {

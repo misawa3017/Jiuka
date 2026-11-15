@@ -321,6 +321,53 @@ async function main() {
     }));
     await assertFails(joinGroup(dave, 'dave', 'Dave', 'attending', 'attendeeCount', 4, 0));
     await assertSucceeds(joinGroup(dave, 'dave', 'Dave', 'waitlisted', 'waitlistCount', 3, 0));
+
+    // 限熟人場次：建立時要同時建立 6 位數邀請碼；邀請碼只有主揪與管理者看得到。
+    const priv = (store) => doc(store, 'events', 'private-game');
+    const invite = (store) => doc(store, 'events', 'private-game', 'private', 'invite');
+    const inviteOnly = event({ organizerName: 'Alice 主揪', status: 3, maxPlayers: 6 });
+    await assertFails(setDoc(priv(alice), inviteOnly));
+    const badCode = writeBatch(alice);
+    badCode.set(priv(alice), inviteOnly);
+    badCode.set(invite(alice), { code: '1234' });
+    await assertFails(badCode.commit());
+    const createPrivate = writeBatch(alice);
+    createPrivate.set(priv(alice), inviteOnly);
+    createPrivate.set(invite(alice), { code: '482913' });
+    await assertSucceeds(createPrivate.commit());
+    await assertFails(setDoc(doc(bob, 'events', 'bob-private', 'private', 'invite'), { code: '000000' }));
+    await assertSucceeds(getDoc(invite(alice)));
+    await assertSucceeds(getDoc(invite(root)));
+    await assertFails(getDoc(invite(bob)));
+    await assertFails(getDoc(invite(guest)));
+    await assertFails(updateDoc(invite(alice), { code: '111111' }));
+    await assertFails(deleteDoc(invite(alice)));
+
+    // 報名限熟人場次：要帶正確邀請碼。
+    const joinPrivate = async (store, uid, name, code, value) => {
+      const batch = writeBatch(store);
+      batch.update(priv(store), { attendeeCount: value });
+      batch.set(doc(store, 'events', 'private-game', 'participants', uid), {
+        eventId: 'private-game', userId: uid, status: 'attending', joinedAt: serverTimestamp(),
+        displayName: name, guests: 0, ...(code === undefined ? {} : { inviteCode: code }),
+      });
+      await batch.commit();
+    };
+    await assertFails(joinPrivate(bob, 'bob', 'Bob 新名', undefined, 1));
+    await assertFails(joinPrivate(bob, 'bob', 'Bob 新名', '000000', 1));
+    await assertSucceeds(joinPrivate(bob, 'bob', 'Bob 新名', '482913', 1));
+
+    // 開放公開報名：只有主揪或管理者，只能從 3 改成 0 並記錄時間。
+    const publish = (store, extra = {}) => updateDoc(priv(store), {
+      status: 0, publishedAt: serverTimestamp(), ...extra,
+    });
+    await assertFails(publish(bob));
+    await assertFails(publish(alice, { maxPlayers: 20 }));
+    await assertFails(updateDoc(priv(alice), { status: 0 }));
+    await assertSucceeds(publish(alice));
+    await assertFails(publish(alice));
+    // 公開後不需要邀請碼。
+    await assertSucceeds(joinPrivate(carol, 'carol', 'Carol', undefined, 2));
     console.log('Firestore rules: all allow/deny cases passed');
   } finally {
     await env.cleanup();

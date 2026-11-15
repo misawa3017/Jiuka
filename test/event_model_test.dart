@@ -88,6 +88,17 @@ void main() {
     expect(Group.fromMap({'adminId': 'a'}, 'old').memberNames, isEmpty);
   });
 
+  test('限熟人場次仍接受報名，狀態數字往返不變', () {
+    final private = event().copyWith(status: EventStatus.inviteOnly);
+    expect(private.isInviteOnly, isTrue);
+    expect(private.isAcceptingSignups, isTrue);
+    expect(private.canAcceptParticipants(DateTime(2026, 12, 1)), isTrue);
+    expect(private.toMap()['status'], 3);
+    expect(Event.fromMap(private.toMap(), 'e').status, EventStatus.inviteOnly);
+    final cancelled = event().copyWith(status: EventStatus.cancelled);
+    expect(cancelled.isAcceptingSignups, isFalse);
+  });
+
   test('同行朋友：一組人數含本人，舊資料視為 0 位朋友', () {
     expect(
       EventParticipant.fromMap({
