@@ -19,6 +19,8 @@ Future<void> main() async {
   // 使用 /event/xxx 形式的網址（預設是 /#/event/xxx），分享連結與重新整理才會進到正確頁面。
   // Firebase Hosting 已設定把所有路徑導回 index.html。
   usePathUrlStrategy();
+  // 用 push 開啟的頁面（球隊、場次等）也要更新網址列，才能複製、分享與重新整理。
+  GoRouter.optionURLReflectsImperativeAPIs = true;
   WidgetsFlutterBinding.ensureInitialized();
   if (!kIsWeb &&
       (defaultTargetPlatform == TargetPlatform.android ||

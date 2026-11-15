@@ -1,5 +1,6 @@
 import '../../events/models/event_model.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../auth/models/user_model.dart';
 import '../../../components/content_width.dart';
 import 'package:provider/provider.dart';
@@ -230,6 +231,11 @@ class _ManagerTools extends StatelessWidget {
       title: captain ? '隊長功能' : '幹部功能',
       icon: Icons.admin_panel_settings_outlined,
       children: [
+        FilledButton.tonalIcon(
+          onPressed: () => _copyInvite(context, group),
+          icon: const Icon(Icons.link),
+          label: const Text('複製邀請連結'),
+        ),
         if (captain)
           StreamBuilder<List<JoinRequest>>(
             stream: context.read<GroupRepository>().watchJoinRequests(group.id),
@@ -281,6 +287,33 @@ class _ManagerTools extends StatelessWidget {
         if (!captain) _LeaveButton(group: group, userId: userId),
       ],
     );
+  }
+}
+
+/// 複製球隊連結與加入說明，方便貼到 LINE 群組。
+Future<void> _copyInvite(BuildContext context, Group group) async {
+  final link = Uri.base.replace(
+    path: '/group/${group.id}',
+    query: '',
+    fragment: '',
+  );
+  final text =
+      '邀請你加入揪咖球隊「${group.name}」\n'
+      '$link\n'
+      '打開後用 Google 登入，按「申請加入」，隊長核准後就是隊員了。';
+  try {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('已複製邀請連結，可以貼到 LINE 群組了。')));
+    }
+  } catch (_) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('無法複製，請手動分享這個網址：$link')));
+    }
   }
 }
 
