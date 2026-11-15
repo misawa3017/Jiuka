@@ -36,6 +36,7 @@ class _SeasonFormScreenState extends State<SeasonFormScreen> {
   bool _loaded = false;
 
   Venue? _venue;
+  SportType _sport = SportType.basketball;
   DateTime? _start;
   DateTime? _end;
   int _dayOfWeek = 3;
@@ -65,6 +66,9 @@ class _SeasonFormScreenState extends State<SeasonFormScreen> {
           setState(() {
             _original = season;
             _name.text = season.name;
+            _sport = season.sport == 'badminton'
+                ? SportType.badminton
+                : SportType.basketball;
             _capacity.text = '${season.capacity}';
             _rent.text = '${season.totalRent}';
             _fee.text = '${season.feePerMember}';
@@ -162,6 +166,7 @@ class _SeasonFormScreenState extends State<SeasonFormScreen> {
         Season(
           id: original?.id ?? '',
           name: _name.text.trim(),
+          sport: _sport.name,
           venueId: venue?.id ?? original!.venueId,
           venueName: venue?.name ?? original!.venueName,
           city: venue?.city ?? original!.city,
@@ -261,6 +266,21 @@ class _SeasonFormScreenState extends State<SeasonFormScreen> {
                         ),
                         validator: (v) =>
                             (v ?? '').trim().isEmpty ? '請輸入名稱' : null,
+                      ),
+                      SegmentedButton<SportType>(
+                        segments: const [
+                          ButtonSegment(
+                            value: SportType.basketball,
+                            label: Text('籃球'),
+                          ),
+                          ButtonSegment(
+                            value: SportType.badminton,
+                            label: Text('羽毛球'),
+                          ),
+                        ],
+                        selected: {_sport},
+                        onSelectionChanged: (value) =>
+                            setState(() => _sport = value.first),
                       ),
                       StreamBuilder<List<Venue>>(
                         stream: _venues,

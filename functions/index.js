@@ -9,6 +9,9 @@ const { getMessaging } = require('firebase-admin/messaging');
 const { setGlobalOptions, logger } = require('firebase-functions/v2');
 const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
 const { HttpsError, onCall } = require('firebase-functions/v2/https');
+const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { randomInt } = require('node:crypto');
+const { datesToCreate, taipeiDateTime, seasonEventId } = require('./schedules');
 const {
   planEventUpdate,
   isPastCancelDeadline,
@@ -382,4 +385,111 @@ exports.reviewJoinRequest = onCall(async (request) => {
   });
   await notify([userId], joinReviewedNotice(group, approve), '', { groupId });
   return { approved: approve };
+});
+
+/**
+ * 替一個季租開出到期的每週場次。季租成員自動列入正取（seasonMember: true），
+ * 剩下名額開放臨打；臨打對象為「先開放給隊員與熟人」時以限熟人狀態開出並建立邀請碼。
+ * 用固定的場次 ID 搭配 create()，就算重複執行也不會重複開場。
+ * @returns {Promise<string[]>} 這次新開出的日期
+ */
+async function createSeasonEvents(groupId, seasonRef, now = new Date()) {
+  const season = (await seasonRef.get()).data();
+  const dates = datesToCreate(season, now);
+  if (dates.length === 0) return [];
+  const group = (await db.collection('groups').doc(groupId).get()).data();
+  if (!group) return [];
+  const organizer = (await db.collection('users').doc(season.organizerId).get()).data();
+  // 只保留仍是隊員的季租成員。
+  const members = (season.memberIds || []).filter((id) => (group.memberIds || []).includes(id));
+  const created = [];
+
+  for (const date of dates) {
+    const eventRef = db.collection('events').doc(seasonEventId(groupId, seasonRef.id, date));
+    const startTime = taipeiDateTime(date, season.startTime);
+    const endTime = taipeiDateTime(date, season.endTime);
+    if (!startTime || !endTime || startTime <= now) continue;
+    const batch = db.batch();
+    batch.create(eventRef, {
+      groupId,
+      seasonId: seasonRef.id,
+      organizerId: season.organizerId,
+      organizerName: organizer?.name || '',
+      title: season.name,
+      sport: season.sport || 'basketball',
+      city: season.city,
+      district: season.district,
+      venue: season.venueName,
+      description: '季租場次：季租成員已自動列入正取，空位開放臨打。',
+      existingPlayers: 0,
+      organizerPlaying: false,
+      startTime: Timestamp.fromDate(startTime),
+      endTime: Timestamp.fromDate(endTime),
+      cost: season.dropInFee,
+      costMode: 'perPerson',
+      maxPlayers: season.capacity,
+      attendeeCount: members.length,
+      waitlistCount: 0,
+      status: season.dropInMode === 'inviteOnly' ? 3 : 0,
+      isRecurring: true,
+      cancelDeadlineHours: season.cancelDeadlineHours ?? 0,
+    });
+    for (const userId of members) {
+      batch.create(eventRef.collection('participants').doc(userId), {
+        eventId: eventRef.id,
+        userId,
+        status: 'attending',
+        joinedAt: FieldValue.serverTimestamp(),
+        displayName: group.memberNames?.[userId] || '',
+        guests: 0,
+        seasonMember: true,
+      });
+    }
+    if (season.dropInMode === 'inviteOnly') {
+      batch.create(eventRef.collection('private').doc('invite'), {
+        code: String(randomInt(100000, 1000000)),
+      });
+    }
+    try {
+      await batch.commit();
+      created.push(date);
+    } catch (error) {
+      // ALREADY_EXISTS：這一天已經開過，略過即可。
+      if (error.code !== 6) throw error;
+    }
+    await seasonRef.update({ lastCreatedFor: date });
+  }
+  return created;
+}
+
+// 每天早上 6 點（台灣時間）替所有啟用中的季租開出到期的場次。
+exports.createSeasonEvents = onSchedule(
+  { schedule: 'every day 06:00', timeZone: 'Asia/Taipei' },
+  async () => {
+    const seasons = await db.collectionGroup('seasons').where('active', '==', true).get();
+    for (const doc of seasons.docs) {
+      const groupId = doc.ref.parent.parent.id;
+      try {
+        const created = await createSeasonEvents(groupId, doc.ref);
+        if (created.length) logger.info('季租開出場次', { groupId, seasonId: doc.id, created });
+      } catch (error) {
+        logger.error('季租開場次失敗', { groupId, seasonId: doc.id, error: String(error) });
+      }
+    }
+  },
+);
+
+// 隊長或幹部在季租頁手動檢查並開出到期的場次（也用於測試）。
+exports.openSeasonEventsNow = onCall(async (request) => {
+  const uid = requireGoogleUser(request, 'Google 登入後才能操作季租。');
+  const groupId = requireId(request.data?.groupId, '球隊編號無效。');
+  const seasonId = requireId(request.data?.seasonId, '季租編號無效。');
+  const group = (await db.collection('groups').doc(groupId).get()).data();
+  if (!group) throw new HttpsError('not-found', '找不到球隊。');
+  if (group.adminId !== uid && !(group.officerIds || []).includes(uid)) {
+    throw new HttpsError('permission-denied', '只有隊長或幹部可以操作季租。');
+  }
+  const seasonRef = db.collection('groups').doc(groupId).collection('seasons').doc(seasonId);
+  if (!(await seasonRef.get()).exists) throw new HttpsError('not-found', '找不到季租。');
+  return { created: await createSeasonEvents(groupId, seasonRef) };
 });

@@ -464,7 +464,7 @@ async function main() {
     // 季租：隊長 bob、幹部 alice；成員 alice、bob。
     const season = (store, id = 'q1') => doc(store, 'groups', 'group', 'seasons', id);
     const q1 = {
-      name: '2027 Q1 週三夜', venueId: 'court', venueName: '三重運動中心 3F',
+      name: '2027 Q1 週三夜', sport: 'basketball', venueId: 'court', venueName: '三重運動中心 3F',
       city: '新北市', district: '新北市三重區', startDate: '2027-01-06', endDate: '2027-03-31',
       dayOfWeek: 3, startTime: '20:00', endTime: '22:00', capacity: 12, totalRent: 28800,
       feePerMember: 3300, dropInFee: 150, dropInMode: 'inviteOnly', openDaysBefore: 7,
@@ -486,6 +486,22 @@ async function main() {
     await assertSucceeds(getDocs(collection(alice, 'groups', 'group', 'seasons')));
     await assertFails(getDocs(collection(carol, 'groups', 'group', 'seasons')));
     await assertFails(deleteDoc(season(carol)));
+    await assertFails(setDoc(season(alice, 'x'), { ...q1, sport: 'tennis' }));
+    // 球隊場次（team-private，主揪 alice）：隊長 bob 也能看名單，非管理者 carol 只能看自己的。
+    await assertSucceeds(getDocs(collection(bob, 'events', 'team-private', 'participants')));
+    await assertFails(getDocs(collection(carol, 'events', 'team-private', 'participants')));
+    // 報名時不能自己標成季租成員：dave 帶正確邀請碼報名可以，多帶 seasonMember 就被拒絕。
+    const daveJoin = (extra) => {
+      const batch = writeBatch(dave);
+      batch.update(teamPrivate(dave), { attendeeCount: 3 });
+      batch.set(doc(dave, 'events', 'team-private', 'participants', 'dave'), {
+        eventId: 'team-private', userId: 'dave', status: 'attending', joinedAt: serverTimestamp(),
+        displayName: 'Dave', guests: 0, inviteCode: '135790', ...extra,
+      });
+      return batch.commit();
+    };
+    await assertFails(daveJoin({ seasonMember: true }));
+    await assertSucceeds(daveJoin({}));
     console.log('Firestore rules: all allow/deny cases passed');
   } finally {
     await env.cleanup();

@@ -22,6 +22,8 @@ String weekdayLabel(DateTime date) => '週${_weekdays[date.weekday - 1]}';
 
 /// 費用的簡短說明，列表與詳情共用。
 String costSummary(Event event, {bool joining = false}) {
+  // 季租場次：季租成員已含季費，卡片顯示臨打費。
+  if (event.seasonId.isNotEmpty) return '臨打 ${event.cost} 元';
   if (event.finalCostPerPerson case final amount?) return '每人 $amount 元（已確定）';
   if (event.costMode == CostMode.perPerson) return '每人 ${event.cost} 元';
   final estimate = event.estimatedCostPerPerson(joining: joining);

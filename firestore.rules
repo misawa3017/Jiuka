@@ -222,17 +222,18 @@ service cloud.firestore {
 
         function validSeason(season) {
           let group = groupData();
-          return season.keys().hasAll(['name', 'venueId', 'venueName', 'city', 'district',
+          return season.keys().hasAll(['name', 'sport', 'venueId', 'venueName', 'city', 'district',
               'startDate', 'endDate', 'dayOfWeek', 'startTime', 'endTime', 'capacity',
               'totalRent', 'feePerMember', 'dropInFee', 'dropInMode', 'openDaysBefore',
               'cancelDeadlineHours', 'organizerId', 'skipDates', 'memberIds', 'paidMemberIds',
               'active', 'lastCreatedFor'])
-            && season.keys().hasOnly(['name', 'venueId', 'venueName', 'city', 'district',
+            && season.keys().hasOnly(['name', 'sport', 'venueId', 'venueName', 'city', 'district',
               'startDate', 'endDate', 'dayOfWeek', 'startTime', 'endTime', 'capacity',
               'totalRent', 'feePerMember', 'dropInFee', 'dropInMode', 'openDaysBefore',
               'cancelDeadlineHours', 'organizerId', 'skipDates', 'memberIds', 'paidMemberIds',
               'active', 'lastCreatedFor'])
             && trimmedNonEmpty(season.name) && season.name.size() <= 60
+            && season.sport in ['basketball', 'badminton']
             && season.venueId is string
             && trimmedNonEmpty(season.venueName)
             && trimmedNonEmpty(season.city)
@@ -377,8 +378,10 @@ service cloud.firestore {
 
       match /participants/{participantId} {
         allow get: if googleUser()
-          && (request.auth.uid == participantId || eventOrganizer(request.auth.uid) || isAdmin());
-        allow list: if googleUser() && (eventOrganizer(request.auth.uid) || isAdmin());
+          && (request.auth.uid == participantId || eventOrganizer(request.auth.uid) || isAdmin()
+            || eventGroupManager());
+        allow list: if googleUser()
+          && (eventOrganizer(request.auth.uid) || isAdmin() || eventGroupManager());
         allow create: if googleUser()
           && request.auth.uid == participantId
           && request.resource.data.keys().hasAll(['eventId', 'userId', 'status', 'joinedAt', 'displayName', 'guests'])
@@ -419,6 +422,13 @@ service cloud.firestore {
 
       function eventPath() {
         return /databases/$(database)/documents/events/$(eventId);
+      }
+
+      // 球隊場次的隊長或幹部（季租頁統計臨打收入時需要讀名單）。
+      function eventGroupManager() {
+        let groupId = get(eventPath()).data.get('groupId', '');
+        return groupId != ''
+          && isGroupManager(get(/databases/$(database)/documents/groups/$(groupId)).data);
       }
 
       function invitePath() {

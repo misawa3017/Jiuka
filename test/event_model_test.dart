@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jiuka/features/events/models/event_model.dart';
+import 'package:jiuka/features/events/widgets/event_card.dart';
 import 'package:jiuka/features/groups/models/group_model.dart';
 
 void main() {
@@ -86,6 +87,26 @@ void main() {
     }, 'g');
     expect(restored.memberNames, {'a': '小明', 'b': '小華'});
     expect(Group.fromMap({'adminId': 'a'}, 'old').memberNames, isEmpty);
+  });
+
+  test('季租場次：記錄所屬季租、季租成員標記，卡片顯示臨打費', () {
+    final map = event().toMap()..['seasonId'] = 'q1';
+    final seasonal = Event.fromMap(map, 'g_q1_20270106');
+    expect(seasonal.seasonId, 'q1');
+    expect(seasonal.copyWith(venue: '新球館').seasonId, 'q1');
+    expect(costSummary(seasonal), '臨打 150 元');
+    expect(event().toMap().containsKey('seasonId'), isFalse);
+    expect(
+      EventParticipant.fromMap({
+        'status': 'attending',
+        'seasonMember': true,
+      }, 'u').seasonMember,
+      isTrue,
+    );
+    expect(
+      EventParticipant.fromMap({'status': 'attending'}, 'u').seasonMember,
+      isFalse,
+    );
   });
 
   test('限熟人場次仍接受報名，狀態數字往返不變', () {

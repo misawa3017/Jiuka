@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../../../components/content_width.dart';
 import '../../auth/repositories/auth_repository.dart';
+import '../../events/models/event_model.dart';
 import '../models/group_model.dart';
 import '../models/season_model.dart';
 import '../repositories/group_repository.dart';
@@ -121,6 +122,52 @@ class _SeasonDetailScreenState extends State<SeasonDetailScreen> {
   late final Stream<Season?> _season = context
       .read<GroupRepository>()
       .watchSeason(widget.groupId, widget.seasonId);
+  late final Stream<List<Event>> _events = context
+      .read<GroupRepository>()
+      .watchSeasonEvents(widget.seasonId);
+
+  // 臨打收入要讀各場名單，同一批場次只算一次（重新整理頁面會重算）。
+  String? _incomeKey;
+  Future<int>? _income;
+  bool _opening = false;
+
+  Future<int> _incomeFor(List<Event> events) {
+    final key = events.map((e) => '${e.id}:${e.attendeeCount}').join(',');
+    if (key != _incomeKey || _income == null) {
+      _incomeKey = key;
+      _income = context.read<GroupRepository>().seasonDropInIncome(events);
+    }
+    return _income!;
+  }
+
+  Future<void> _openNow() async {
+    setState(() => _opening = true);
+    try {
+      final created = await context.read<GroupRepository>().openSeasonEventsNow(
+        widget.groupId,
+        widget.seasonId,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              created.isEmpty
+                  ? '目前沒有到期要開的場次（會在開打前設定的天數自動開出）。'
+                  : '已開出 ${created.join('、')} 的場次。',
+            ),
+          ),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('開場次失敗，請稍後重試。')));
+      }
+    } finally {
+      if (mounted) setState(() => _opening = false);
+    }
+  }
 
   Future<void> _update(
     Future<void> Function(GroupRepository repo) action,
@@ -257,7 +304,6 @@ class _SeasonDetailScreenState extends State<SeasonDetailScreen> {
             ),
           );
         }
-        final balance = season.collectedFees - season.totalRent;
         return Scaffold(
           appBar: AppBar(
             title: Text(season.name),
@@ -322,30 +368,63 @@ class _SeasonDetailScreenState extends State<SeasonDetailScreen> {
                       ],
                     ),
                     const SizedBox(height: 12),
-                    GridView.count(
-                      crossAxisCount: 2,
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      mainAxisSpacing: 10,
-                      crossAxisSpacing: 10,
-                      childAspectRatio: 2.2,
-                      children: [
-                        _Figure(label: '整季場租', value: _money(season.totalRent)),
-                        _Figure(
-                          label:
-                              '已收季費 ${season.paidMemberIds.length}/${season.memberIds.length}',
-                          value: _money(season.collectedFees),
-                          highlight: true,
-                        ),
-                        const _Figure(label: '臨打收入（已付）', value: '開打後統計'),
-                        _Figure(
-                          label: '目前差額',
-                          value: balance >= 0
-                              ? '+${_money(balance)}'
-                              : '−${_money(-balance)}',
-                          warning: balance < 0,
-                        ),
-                      ],
+                    // 收支：差額 = 已收季費 + 臨打收入 − 整季場租。
+                    StreamBuilder<List<Event>>(
+                      stream: _events,
+                      builder: (context, eventsSnapshot) {
+                        final events = eventsSnapshot.data ?? const <Event>[];
+                        return FutureBuilder<int>(
+                          future: events.isEmpty
+                              ? Future.value(0)
+                              : _incomeFor(events),
+                          builder: (context, income) {
+                            final dropIn = income.data;
+                            final balance = dropIn == null
+                                ? null
+                                : season.collectedFees +
+                                      dropIn -
+                                      season.totalRent;
+                            return GridView.count(
+                              crossAxisCount: 2,
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              mainAxisSpacing: 10,
+                              crossAxisSpacing: 10,
+                              childAspectRatio: 2.2,
+                              children: [
+                                _Figure(
+                                  label: '整季場租',
+                                  value: _money(season.totalRent),
+                                ),
+                                _Figure(
+                                  label:
+                                      '已收季費 ${season.paidMemberIds.length}/${season.memberIds.length}',
+                                  value: _money(season.collectedFees),
+                                  highlight: true,
+                                ),
+                                _Figure(
+                                  label: '臨打收入（已付）',
+                                  value: dropIn != null
+                                      ? _money(dropIn)
+                                      : income.hasError
+                                      ? '無法統計'
+                                      : '計算中…',
+                                  highlight: true,
+                                ),
+                                _Figure(
+                                  label: '目前差額',
+                                  value: balance == null
+                                      ? '—'
+                                      : balance >= 0
+                                      ? '+${_money(balance)}'
+                                      : '−${_money(-balance)}',
+                                  warning: (balance ?? 0) < 0,
+                                ),
+                              ],
+                            );
+                          },
+                        );
+                      },
                     ),
                     const SizedBox(height: 12),
                     SectionCard(
@@ -391,6 +470,58 @@ class _SeasonDetailScreenState extends State<SeasonDetailScreen> {
                             onPressed: () => _editMembers(group, season),
                             icon: const Icon(Icons.edit_outlined),
                             label: const Text('編輯季租成員'),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    SectionCard(
+                      title: '已開出的場次',
+                      icon: Icons.event_available_outlined,
+                      children: [
+                        StreamBuilder<List<Event>>(
+                          stream: _events,
+                          builder: (context, snapshot) {
+                            final events = snapshot.data ?? const <Event>[];
+                            if (events.isEmpty) {
+                              return Text(
+                                '還沒有開出場次。每週會在開打前 ${season.openDaysBefore} 天自動開出。',
+                                style: TextStyle(
+                                  color: theme.colorScheme.onSurfaceVariant,
+                                ),
+                              );
+                            }
+                            return Column(
+                              children: [
+                                for (final event in events)
+                                  ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    dense: true,
+                                    title: Text(
+                                      DateFormat(
+                                        'MM/dd HH:mm',
+                                      ).format(event.startTime),
+                                    ),
+                                    subtitle: Text(
+                                      event.status == EventStatus.cancelled
+                                          ? '已取消'
+                                          : '${event.occupiedCount}/${event.maxPlayers} 人'
+                                                '${event.isInviteOnly ? ' · 限隊員與熟人' : ''}',
+                                    ),
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: () =>
+                                        context.push('/event/${event.id}'),
+                                  ),
+                              ],
+                            );
+                          },
+                        ),
+                        if (canManage)
+                          OutlinedButton.icon(
+                            onPressed: _opening || !season.active
+                                ? null
+                                : _openNow,
+                            icon: const Icon(Icons.event_repeat),
+                            label: Text(_opening ? '檢查中…' : '立即檢查並開出場次'),
                           ),
                       ],
                     ),

@@ -5,6 +5,7 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart' as firebase_auth;
 import 'package:flutter/foundation.dart';
 
+import '../../events/models/event_model.dart';
 import '../models/group_model.dart';
 import '../models/season_model.dart';
 import '../models/venue_model.dart';
@@ -39,6 +40,8 @@ class GroupRepository extends ChangeNotifier {
   final FirebaseFunctions? _functions;
   final Future<void> Function(String groupId, String userId, bool approve)?
   _submitReview;
+  final Future<List<String>> Function(String groupId, String seasonId)?
+  _submitOpenSeason;
 
   List<Group> _groups = [];
   StreamSubscription<firebase_auth.User?>? _authSubscription;
@@ -58,10 +61,13 @@ class GroupRepository extends ChangeNotifier {
     FirebaseFunctions? functions,
     Future<void> Function(String groupId, String userId, bool approve)?
     submitReview,
+    Future<List<String>> Function(String groupId, String seasonId)?
+    submitOpenSeason,
   }) : _firestore = firestore ?? FirebaseFirestore.instance,
        _auth = auth ?? firebase_auth.FirebaseAuth.instance,
        _functions = functions,
-       _submitReview = submitReview {
+       _submitReview = submitReview,
+       _submitOpenSeason = submitOpenSeason {
     _authSubscription = _auth.authStateChanges().listen(
       _handleAuthChange,
       onError: (Object error) {
@@ -269,6 +275,57 @@ class GroupRepository extends ChangeNotifier {
     'skipDates': ?skipDates,
     'active': ?active,
   });
+
+  /// 季租已開出的場次，由早到晚。
+  Stream<List<Event>> watchSeasonEvents(String seasonId) => _firestore
+      .collection('events')
+      .where('seasonId', isEqualTo: seasonId)
+      .snapshots()
+      .map(
+        (snapshot) =>
+            snapshot.docs
+                .map((doc) => Event.fromMap(doc.data(), doc.id))
+                .toList()
+              ..sort((a, b) => a.startTime.compareTo(b.startTime)),
+      );
+
+  /// 臨打收入：各場標記「已付」的非季租成員，人數（含同行朋友）× 該場臨打費。
+  Future<int> seasonDropInIncome(List<Event> events) async {
+    var total = 0;
+    for (final event in events) {
+      if (event.status == EventStatus.cancelled) continue;
+      final participants = await _firestore
+          .collection('events')
+          .doc(event.id)
+          .collection('participants')
+          .get();
+      for (final doc in participants.docs) {
+        final participant = EventParticipant.fromMap(doc.data(), doc.id);
+        if (participant.paid && !participant.seasonMember) {
+          total += participant.partySize * event.cost;
+        }
+      }
+    }
+    return total;
+  }
+
+  /// 隊長或幹部立即檢查並開出到期的季租場次；回傳新開出的日期。
+  Future<List<String>> openSeasonEventsNow(
+    String groupId,
+    String seasonId,
+  ) async {
+    if (_submitOpenSeason case final submit?) {
+      return submit(groupId, seasonId);
+    }
+    final functions =
+        _functions ?? FirebaseFunctions.instanceFor(region: 'asia-east1');
+    final result = await functions.httpsCallable('openSeasonEventsNow').call({
+      'groupId': groupId,
+      'seasonId': seasonId,
+    });
+    final created = (result.data as Map?)?['created'];
+    return created is List ? created.whereType<String>().toList() : const [];
+  }
 
   Future<void> deleteSeason(String groupId, String seasonId) =>
       _seasons(groupId).doc(seasonId).delete();

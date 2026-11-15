@@ -3,6 +3,9 @@
 class Season {
   final String id;
   final String name;
+
+  /// 運動類型名稱（basketball / badminton），自動開出的場次沿用。
+  final String sport;
   final String venueId;
   final String venueName;
   final String city;
@@ -37,6 +40,7 @@ class Season {
   const Season({
     required this.id,
     required this.name,
+    this.sport = 'basketball',
     required this.venueId,
     required this.venueName,
     required this.city,
@@ -96,6 +100,7 @@ class Season {
 
   Map<String, dynamic> toMap() => {
     'name': name,
+    'sport': sport,
     'venueId': venueId,
     'venueName': venueName,
     'city': city,
@@ -131,6 +136,7 @@ class Season {
     return Season(
       id: id,
       name: text('name'),
+      sport: text('sport') == 'badminton' ? 'badminton' : 'basketball',
       venueId: text('venueId'),
       venueName: text('venueName'),
       city: text('city'),

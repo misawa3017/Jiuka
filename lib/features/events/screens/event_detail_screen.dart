@@ -319,29 +319,42 @@ class _EventDetails extends StatelessWidget {
                       Expanded(child: _capacityCard(context)),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: _StatCard(
-                          icon: Icons.payments_outlined,
-                          label: event.isCostConfirmed
-                              ? '每人費用（已確定）'
-                              : event.costMode == CostMode.perPerson
-                              ? '每人費用'
-                              : '每人預估',
-                          value: event.isCostConfirmed
-                              ? '${event.finalCostPerPerson} 元'
-                              : event.costMode == CostMode.perPerson
-                              ? '${event.cost} 元'
-                              : estimated == null
-                              ? '待估算'
-                              : '約 $estimated 元',
-                          valueColor: event.isCostConfirmed
-                              ? scheme.primary
-                              : null,
-                          note: event.isCostConfirmed
-                              ? '主揪已確定最終金額'
-                              : event.costMode == CostMode.perPerson
-                              ? '固定費用'
-                              : '整場場租 ${event.cost} 元，依確定人數平分，最終金額由主揪於開始後確定',
-                        ),
+                        child: participant?.seasonMember == true
+                            // 季租成員已繳季費，這場不另外收費。
+                            ? _StatCard(
+                                icon: Icons.payments_outlined,
+                                label: '你的費用',
+                                value: '已含季費',
+                                valueColor: scheme.primary,
+                                note: '臨打球友每人 ${event.cost} 元',
+                              )
+                            : _StatCard(
+                                icon: Icons.payments_outlined,
+                                label: event.seasonId.isNotEmpty
+                                    ? '臨打費用'
+                                    : event.isCostConfirmed
+                                    ? '每人費用（已確定）'
+                                    : event.costMode == CostMode.perPerson
+                                    ? '每人費用'
+                                    : '每人預估',
+                                value: event.isCostConfirmed
+                                    ? '${event.finalCostPerPerson} 元'
+                                    : event.costMode == CostMode.perPerson
+                                    ? '${event.cost} 元'
+                                    : estimated == null
+                                    ? '待估算'
+                                    : '約 $estimated 元',
+                                valueColor: event.isCostConfirmed
+                                    ? scheme.primary
+                                    : null,
+                                note: event.seasonId.isNotEmpty
+                                    ? '季租成員已含季費，臨打每人每場'
+                                    : event.isCostConfirmed
+                                    ? '主揪已確定最終金額'
+                                    : event.costMode == CostMode.perPerson
+                                    ? '固定費用'
+                                    : '整場場租 ${event.cost} 元，依確定人數平分，最終金額由主揪於開始後確定',
+                              ),
                       ),
                     ],
                   ),
@@ -397,6 +410,7 @@ class _EventDetails extends StatelessWidget {
                     icon: Icons.groups_outlined,
                     children: [
                       _OrganizerRoster(
+                        seasonEvent: event.seasonId.isNotEmpty,
                         stream: repository.getParticipantsStream(event.id),
                         onRetry: onRetry,
                         // 主揪與管理者可移除報名者，且場次仍開放時才有意義。
@@ -707,7 +721,13 @@ class _EventDetails extends StatelessWidget {
           final confirmed = await showDialog<bool>(
             context: context,
             builder: (dialogContext) => AlertDialog(
-              title: Text(isWaitlisted ? '取消候補？' : '取消報名？'),
+              title: Text(
+                participant?.seasonMember == true
+                    ? '這週請假？'
+                    : isWaitlisted
+                    ? '取消候補？'
+                    : '取消報名？',
+              ),
               content: const Text('取消後名額與預估費用可能變動。'),
               actions: [
                 TextButton(
@@ -739,7 +759,13 @@ class _EventDetails extends StatelessWidget {
             }
           }
         },
-        child: Text(isWaitlisted ? '取消候補' : '取消報名'),
+        child: Text(
+          participant?.seasonMember == true
+              ? '這週請假'
+              : isWaitlisted
+              ? '取消候補'
+              : '取消報名',
+        ),
       );
     }
     return FilledButton.icon(
@@ -1132,6 +1158,7 @@ class _OrganizerActions extends StatelessWidget {
 
 class _OrganizerRoster extends StatelessWidget {
   final Stream<List<EventParticipant>> stream;
+  final bool seasonEvent;
   final VoidCallback onRetry;
   final void Function(EventParticipant participant)? onRemove;
   final void Function(
@@ -1142,6 +1169,7 @@ class _OrganizerRoster extends StatelessWidget {
   onMark;
 
   const _OrganizerRoster({
+    this.seasonEvent = false,
     required this.stream,
     required this.onRetry,
     this.onRemove,
@@ -1185,13 +1213,22 @@ class _OrganizerRoster extends StatelessWidget {
                   : '到場 ${attendees.where((p) => p.attended).length}'
                         ' · 已付 ${attendees.where((p) => p.paid).length}',
             ),
-            _Roster(users: attendees, onRemove: onRemove, onMark: onMark),
+            _Roster(
+              users: attendees,
+              onRemove: onRemove,
+              onMark: onMark,
+              seasonEvent: seasonEvent,
+            ),
             const SizedBox(height: 12),
             _RosterHeading(
               label: '候補',
               count: waitlist.fold(0, (total, p) => total + p.partySize),
             ),
-            _Roster(users: waitlist, onRemove: onRemove),
+            _Roster(
+              users: waitlist,
+              onRemove: onRemove,
+              seasonEvent: seasonEvent,
+            ),
           ],
         );
       },
@@ -1224,6 +1261,9 @@ class _Roster extends StatelessWidget {
   final List<EventParticipant> users;
   final void Function(EventParticipant participant)? onRemove;
 
+  /// 季租場次：名字後面標示「季租」或「臨打」。
+  final bool seasonEvent;
+
   /// 有值時（正取名單）顯示「到場」「已付」標記，點一下切換。
   final void Function(
     EventParticipant participant, {
@@ -1231,7 +1271,12 @@ class _Roster extends StatelessWidget {
     bool? paid,
   })?
   onMark;
-  const _Roster({required this.users, this.onRemove, this.onMark});
+  const _Roster({
+    required this.users,
+    this.onRemove,
+    this.onMark,
+    this.seasonEvent = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1263,6 +1308,7 @@ class _Roster extends StatelessWidget {
                     ? '球友 ${index + 1}'
                     : users[index].displayName,
                 if (users[index].guests > 0) '+${users[index].guests}',
+                if (seasonEvent) users[index].seasonMember ? '（季租）' : '（臨打）',
               ].join(' '),
             ),
             subtitle: onMark == null

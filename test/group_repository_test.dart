@@ -11,6 +11,13 @@ import 'package:mocktail/mocktail.dart';
 
 import 'support/auth_fixture.dart';
 
+class MockQuerySnapshot extends Mock
+    implements QuerySnapshot<Map<String, dynamic>> {}
+
+// ignore: subtype_of_sealed_class
+class MockEntry extends Mock
+    implements QueryDocumentSnapshot<Map<String, dynamic>> {}
+
 void main() {
   test('球隊角色：隊長、幹部、隊員；舊球隊沒有幹部欄位', () {
     final group = Group.fromMap({
@@ -219,6 +226,67 @@ void main() {
       expect(written, {
         'paidMemberIds': ['a', 'b'],
       });
+    });
+
+    test('臨打收入：已付的非季租成員 × 人數 × 臨打費，取消的場次不算', () async {
+      final events = MockCollection();
+      final eventRef = MockDocument();
+      final participants = MockCollection();
+      final snapshot = MockQuerySnapshot();
+      MockEntry entry(Map<String, dynamic> data, String id) {
+        final doc = MockEntry();
+        when(() => doc.data()).thenReturn(data);
+        when(() => doc.id).thenReturn(id);
+        return doc;
+      }
+
+      when(() => store.collection('events')).thenReturn(events);
+      when(() => events.doc('e1')).thenReturn(eventRef);
+      when(() => eventRef.collection('participants')).thenReturn(participants);
+      when(() => participants.get()).thenAnswer((_) async => snapshot);
+      final docs = [
+        entry({'status': 'attending', 'seasonMember': true, 'paid': true}, 'a'),
+        entry({'status': 'attending', 'paid': true, 'guests': 1}, 'b'),
+        entry({'status': 'attending', 'paid': false}, 'c'),
+      ];
+      when(() => snapshot.docs).thenReturn(docs);
+      Event game(String id, EventStatus status) => Event(
+        id: id,
+        groupId: 'g',
+        seasonId: 'q1',
+        startTime: DateTime(2027, 1, 6, 20),
+        endTime: DateTime(2027, 1, 6, 22),
+        venue: '三重運動中心',
+        cost: 150,
+        maxPlayers: 12,
+        status: status,
+      );
+      final income = await repository.seasonDropInIncome([
+        game('e1', EventStatus.open),
+        game('e2', EventStatus.cancelled),
+      ]);
+      // 只有 b（帶 1 位朋友，共 2 人）已付：2 × 150。
+      expect(income, 300);
+      verifyNever(() => events.doc('e2'));
+    });
+
+    test('立即開出季租場次交給 Cloud Function', () async {
+      final calls = <(String, String)>[];
+      final auth = MockAuth();
+      final changes = StreamController<Never>();
+      when(() => auth.authStateChanges()).thenAnswer((_) => changes.stream);
+      final repo = GroupRepository(
+        firestore: store,
+        auth: auth,
+        submitOpenSeason: (groupId, seasonId) async {
+          calls.add((groupId, seasonId));
+          return ['2027-01-06'];
+        },
+      );
+      expect(await repo.openSeasonEventsNow('g', 'q1'), ['2027-01-06']);
+      expect(calls, [('g', 'q1')]);
+      repo.dispose();
+      await changes.close();
     });
 
     test('任免幹部與轉移隊長只改對應欄位', () async {

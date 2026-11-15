@@ -49,6 +49,9 @@ class EventParticipant {
   /// 一組人數：本人＋同行朋友。
   int get partySize => 1 + guests;
 
+  /// 季租成員：由排程自動列入正取（球友不能自己標記），不另收臨打費。
+  final bool seasonMember;
+
   /// 主揪記錄的出席與收款狀態；未記錄時為 false。
   final bool attended;
   final bool paid;
@@ -59,6 +62,7 @@ class EventParticipant {
     required this.joinedAt,
     this.displayName = '',
     this.guests = 0,
+    this.seasonMember = false,
     this.attended = false,
     this.paid = false,
   });
@@ -74,6 +78,7 @@ class EventParticipant {
             : DateTime.fromMillisecondsSinceEpoch(0),
         displayName: _stringValue(map['displayName']).trim(),
         guests: _intValue(map['guests'], 0).clamp(0, maxGuests),
+        seasonMember: _boolValue(map['seasonMember'], false),
         attended: _boolValue(map['attended'], false),
         paid: _boolValue(map['paid'], false),
       );
@@ -82,6 +87,9 @@ class EventParticipant {
 class Event {
   final String id;
   final String groupId;
+
+  /// 季租自動開出的場次會記錄所屬季租；一般場次為空字串。
+  final String seasonId;
   final String organizerId;
 
   /// 主揪暱稱，公開顯示在場次上；舊場次沒有時為空字串。
@@ -130,6 +138,7 @@ class Event {
   Event({
     required this.id,
     required this.groupId,
+    this.seasonId = '',
     this.organizerId = '',
     this.organizerName = '',
     this.sport,
@@ -231,6 +240,7 @@ class Event {
     return Event(
       id: id,
       groupId: _stringValue(map['groupId']),
+      seasonId: _stringValue(map['seasonId']),
       organizerId: _stringValue(map['organizerId']),
       organizerName: _stringValue(map['organizerName']).trim(),
       sport: SportType.values
@@ -306,6 +316,7 @@ class Event {
     return Event(
       id: id ?? this.id,
       groupId: groupId ?? this.groupId,
+      seasonId: seasonId,
       organizerId: organizerId ?? this.organizerId,
       organizerName: organizerName ?? this.organizerName,
       sport: sport ?? this.sport,
