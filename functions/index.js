@@ -373,7 +373,11 @@ exports.reviewJoinRequest = onCall(async (request) => {
     if (data.adminId !== uid) {
       throw new HttpsError('permission-denied', '只有隊長可以審核入隊申請。');
     }
-    if (!requestSnapshot.exists) throw new HttpsError('not-found', '這筆申請已經處理過或被撤回。');
+    if (!requestSnapshot.exists) {
+      // 重複按核准（例如畫面還沒更新）：對方已是隊員就當作成功，不再重發通知。
+      if (approve && (data.memberIds || []).includes(userId)) return null;
+      throw new HttpsError('not-found', '這筆申請已被撤回或已經處理過，請重新整理頁面。');
+    }
     transaction.delete(requestRef);
     if (approve && !(data.memberIds || []).includes(userId)) {
       transaction.update(groupRef, {
@@ -383,6 +387,7 @@ exports.reviewJoinRequest = onCall(async (request) => {
     }
     return data;
   });
+  if (group === null) return { approved: true, alreadyMember: true };
   await notify([userId], joinReviewedNotice(group, approve), '', { groupId });
   return { approved: approve };
 });

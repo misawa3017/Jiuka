@@ -1,3 +1,4 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -125,17 +126,30 @@ class _JoinRequestsState extends State<_JoinRequests> {
 
   Future<void> _review(JoinRequest request, bool approve) async {
     setState(() => _busy.add(request.userId));
+    final name = request.displayName.isEmpty ? '球友' : request.displayName;
     try {
       await context.read<GroupRepository>().reviewJoinRequest(
         widget.group.id,
         request.userId,
         approve: approve,
       );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(approve ? '已核准 $name 入隊' : '已拒絕 $name 的申請')),
+        );
+      }
+    } on FirebaseFunctionsException catch (error) {
+      // 顯示伺服器的說明，例如申請已被撤回。
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message ?? '審核失敗，請稍後重試。')));
+      }
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('審核失敗，請稍後重試。')));
+        ).showSnackBar(const SnackBar(content: Text('審核失敗，請檢查網路後重試。')));
       }
     } finally {
       if (mounted) setState(() => _busy.remove(request.userId));
