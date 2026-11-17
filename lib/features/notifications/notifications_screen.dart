@@ -225,11 +225,12 @@ class _PushCardState extends State<_PushCard> {
     try {
       final status = await context.read<PushService>().enable(widget.userId);
       if (mounted) setState(() => _status = status);
-    } catch (_) {
+    } catch (error) {
+      // 顯示實際原因，方便回報與排查。
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(const SnackBar(content: Text('開啟推播失敗，請稍後重試。')));
+        ).showSnackBar(SnackBar(content: Text('開啟推播失敗：$error')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -247,6 +248,15 @@ class _PushCardState extends State<_PushCard> {
       PushStatus.blocked => (
         Icons.notifications_off_outlined,
         '瀏覽器已封鎖通知。請在網址列左側的網站設定中允許通知，再重新整理。',
+      ),
+      PushStatus.needsInstall => (
+        Icons.add_to_home_screen,
+        'iPhone 要先把揪咖加入主畫面才能收推播：點 Safari 下方的分享按鈕 →「加入主畫面」，'
+            '再從主畫面的揪咖圖示打開，回到這頁按「開啟」。',
+      ),
+      PushStatus.unsupported => (
+        Icons.notifications_off_outlined,
+        '這個瀏覽器不支援推播，通知仍會顯示在這一頁。',
       ),
       _ => (Icons.notifications_outlined, '開啟推播，網站沒開著也能收到遞補、異動等通知'),
     };

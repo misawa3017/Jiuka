@@ -2,7 +2,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 
-enum PushStatus { unavailable, off, on, blocked }
+import 'platform/web_push_platform.dart' as platform;
+
+/// unavailable：沒有設定推播金鑰或不是網頁，不顯示推播區塊。
+/// needsInstall：iPhone／iPad 要先把網站加入主畫面、從主畫面打開才支援推播。
+/// unsupported：這個瀏覽器不支援推播。
+enum PushStatus { unavailable, needsInstall, unsupported, off, on, blocked }
 
 /// 瀏覽器推播：取得 FCM token 並存到 users/{uid}/fcmTokens/{token}，
 /// Cloud Functions 發通知時會一併推播。
@@ -32,8 +37,23 @@ class PushService {
       .collection('fcmTokens')
       .doc(token);
 
-  Future<PushStatus> status(String userId) async {
+  /// 這台裝置能不能用推播；不能時回傳原因，能用時回傳 null。
+  Future<PushStatus?> _unsupportedReason() async {
     if (!isSupported) return PushStatus.unavailable;
+    // iPhone 在一般 Safari 分頁沒有推播，要從主畫面圖示打開。
+    if (platform.isIosBrowser() && !platform.isStandaloneApp()) {
+      return PushStatus.needsInstall;
+    }
+    try {
+      if (!await _messaging().isSupported()) return PushStatus.unsupported;
+    } catch (_) {
+      return PushStatus.unsupported;
+    }
+    return null;
+  }
+
+  Future<PushStatus> status(String userId) async {
+    if (await _unsupportedReason() case final reason?) return reason;
     try {
       final settings = await _messaging().getNotificationSettings();
       if (settings.authorizationStatus == AuthorizationStatus.denied) {
@@ -55,7 +75,7 @@ class PushService {
 
   /// 請瀏覽器授權並登記這台裝置；回傳最新狀態。
   Future<PushStatus> enable(String userId) async {
-    if (!isSupported) return PushStatus.unavailable;
+    if (await _unsupportedReason() case final reason?) return reason;
     final settings = await _messaging().requestPermission();
     if (settings.authorizationStatus == AuthorizationStatus.denied) {
       return PushStatus.blocked;
